@@ -1,0 +1,66 @@
+{
+  "buddies": [
+    {
+      "id": "ank_dance",
+      "label": "안경만두_골반춤",
+      "displaySize": 64,
+      "free": true,
+      "grows": true,
+      "ext": "gif",
+      "stages": [
+        { "stage": 0, "scale": 0.55, "file": "ank_dance", "label": "애기" },
+        { "stage": 1, "scale": 0.78, "file": "ank_dance", "label": "성장" },
+        { "stage": 2, "scale": 1.0, "file": "ank_dance", "label": "성체" }
+      ]
+    },
+    {
+      "id": "ank_listening",
+      "label": "안경만두_노래듣기",
+      "displaySize": 64,
+      "free": true,
+      "grows": true,
+      "ext": "jpg",
+      "stages": [
+        { "stage": 0, "scale": 0.55, "file": "ank_listening", "label": "애기" },
+        { "stage": 1, "scale": 0.78, "file": "ank_listening", "label": "성장" },
+        { "stage": 2, "scale": 1.0, "file": "ank_listening", "label": "성체" }
+      ]
+    },
+    {
+      "id": "ank_sleep",
+      "label": "안경만두_쿨쿨",
+      "displaySize": 64,
+      "free": true,
+      "grows": true,
+      "ext": "gif",
+      "stages": [
+        { "stage": 0, "scale": 0.55, "file": "ank_sleep", "label": "애기" },
+        { "stage": 1, "scale": 0.78, "file": "ank_sleep", "label": "성장" },
+        { "stage": 2, "scale": 1.0, "file": "ank_sleep", "label": "성체" }
+      ]
+    },
+    {
+      "id": "reward_spark",
+      "label": "스파크 (보상·파일 예정)",
+      "displaySize": 64,
+      "free": false,
+      "unlock": "quest:first_room",
+      "fileReady": false,
+      "grows": true,
+      "stages": [
+        { "stage": 0, "scale": 0.55, "file": "reward_spark" },
+        { "stage": 1, "scale": 0.78, "file": "reward_spark" },
+        { "stage": 2, "scale": 1.0, "file": "reward_spark" }
+      ]
+    },
+    {
+      "id": "reward_walker",
+      "label": "워커 (보상·파일 예정)",
+      "displaySize": 64,
+      "free": false,
+      "unlock": "quest:chat_10",
+      "fileReady": false,
+      "grows": false
+    }
+  ]
+}

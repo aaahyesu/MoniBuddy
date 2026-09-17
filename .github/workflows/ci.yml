@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  build-server:
+    name: Build shared + server
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Build shared
+        run: npm run build:shared
+
+      - name: Build server
+        run: npm run build -w @monibuddy/server
+
+      - name: Typecheck desktop (tsc via vite build deps)
+        run: npm run build -w @monibuddy/shared && npx tsc -p apps/desktop/tsconfig.json --noEmit
