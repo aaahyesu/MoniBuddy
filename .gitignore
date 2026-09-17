@@ -1,0 +1,17 @@
+node_modules/
+dist/
+target/
+uploads/
+*.log
+.DS_Store
+.env
+.env.local
+*.local
+.idea/
+README.md~
+apps/desktop/src-tauri/gen/
+apps/desktop/src-tauri/target/
+packages/shared/dist/
+apps/server/dist/
+apps/desktop/dist/
+apps/desktop/tsconfig.tsbuildinfo
