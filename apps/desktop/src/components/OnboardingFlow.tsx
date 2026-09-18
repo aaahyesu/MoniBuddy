@@ -3,6 +3,7 @@ import { APP_NAME } from "@monibuddy/shared";
 import type { Character } from "@monibuddy/shared";
 import { SimpleBuddyPicker } from "./SimpleBuddyPicker";
 import { Brand, Btn, Field, SectionLabel, ShellCard, inputClass } from "./ui";
+import { UpdateBanner } from "./UpdateBanner";
 import { cn } from "../lib/cn";
 
 type Props = {
@@ -32,6 +33,7 @@ export function OnboardingFlow({
   return (
     <ShellCard>
       <Brand title={APP_NAME} subtitle={`SETUP  ${step} / 2`} />
+      <UpdateBanner />
 
       <div className="flex flex-wrap items-center gap-2">
         <span

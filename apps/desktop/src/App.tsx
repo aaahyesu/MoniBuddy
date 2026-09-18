@@ -6,6 +6,7 @@ import { OnboardingFlow } from "./components/OnboardingFlow";
 import { RoomLobby } from "./components/RoomLobby";
 import { SimpleBuddyPicker } from "./components/SimpleBuddyPicker";
 import { Brand, Btn, Field, ShellCard, inputClass } from "./components/ui";
+import { UpdateBanner } from "./components/UpdateBanner";
 import { useLocalProfile } from "./hooks/useLocalProfile";
 import { useProgress } from "./hooks/useProgress";
 import { useRoomSocket } from "./hooks/useRoomSocket";
@@ -251,6 +252,7 @@ export function App() {
     return (
       <ShellCard>
         <Brand title={APP_NAME} subtitle="프로필" />
+        <UpdateBanner />
         <Field label="닉네임">
           <input
             className={inputClass}
