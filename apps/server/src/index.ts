@@ -17,6 +17,7 @@ import {
   MAX_ROOM_MEMBERS,
   Member,
   PNG_MAX_BYTES,
+  MemberProfilePayload,
   RoomCreateAck,
   RoomCreatePayload,
   RoomJoinAck,
@@ -33,6 +34,12 @@ const UPLOAD_DIR = path.resolve(__dirname, "../uploads");
 const PORT = Number(process.env.PORT ?? 3847);
 
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+
+function sanitizeStatusMessage(raw: unknown): string {
+  return String(raw ?? "")
+    .trim()
+    .slice(0, 40);
+}
 
 type Room = {
   code: string;
@@ -165,6 +172,7 @@ io.on("connection", (socket) => {
         character: payload.character,
         state: defaultCharState(0.05),
         offset: 8,
+        statusMessage: sanitizeStatusMessage(payload.statusMessage),
       };
 
       const room: Room = {
@@ -207,6 +215,7 @@ io.on("connection", (socket) => {
         character: payload.character,
         state: defaultCharState(0.1 + slot * 0.08),
         offset: 8 + slot * 10,
+        statusMessage: sanitizeStatusMessage(payload.statusMessage),
       };
       room.members.set(memberId, member);
       room.socketToMember.set(socket.id, memberId);
@@ -263,6 +272,19 @@ io.on("connection", (socket) => {
     if (!member || !payload?.state) return;
     member.state = payload.state;
     socket.to(code).emit(SocketEvents.CharState, { memberId, state: payload.state });
+  });
+
+  socket.on(SocketEvents.MemberProfile, (payload: MemberProfilePayload) => {
+    const code = socketRoom.get(socket.id);
+    if (!code) return;
+    const room = rooms.get(code);
+    if (!room) return;
+    const memberId = room.socketToMember.get(socket.id);
+    if (!memberId) return;
+    const member = room.members.get(memberId);
+    if (!member) return;
+    member.statusMessage = sanitizeStatusMessage(payload?.statusMessage);
+    broadcastSync(room);
   });
 
   socket.on("disconnect", () => {

@@ -14,6 +14,7 @@ type Options = {
   serverUrl: string;
   nickname: string;
   character: Character;
+  statusMessage?: string;
   /** true면 WebSocket 없이 HTTPS 폴링만 사용 (회사망 호환) */
   forcePolling?: boolean;
 };
@@ -136,7 +137,7 @@ export function useRoomSocket(opts: Options) {
     setError(null);
     const socket = socketRef.current;
     if (!socket) return false;
-    const { nickname, character } = optsRef.current;
+    const { nickname, character, statusMessage } = optsRef.current;
     const ack = await new Promise<{
       ok: boolean;
       code?: string;
@@ -144,7 +145,11 @@ export function useRoomSocket(opts: Options) {
       error?: string;
       room?: RoomSnapshot;
     }>((resolve) => {
-      socket.emit(SocketEvents.RoomCreate, { nickname, character }, resolve);
+      socket.emit(
+        SocketEvents.RoomCreate,
+        { nickname, character, statusMessage: (statusMessage || "").trim().slice(0, 40) },
+        resolve,
+      );
     });
     if (!ack?.ok) {
       setError(ack?.error ?? "방 생성 실패");
@@ -160,7 +165,7 @@ export function useRoomSocket(opts: Options) {
     setError(null);
     const socket = socketRef.current;
     if (!socket) return false;
-    const { nickname, character } = optsRef.current;
+    const { nickname, character, statusMessage } = optsRef.current;
     const ack = await new Promise<{
       ok: boolean;
       memberId?: string;
@@ -169,7 +174,12 @@ export function useRoomSocket(opts: Options) {
     }>((resolve) => {
       socket.emit(
         SocketEvents.RoomJoin,
-        { code: code.trim().toUpperCase(), nickname, character },
+        {
+          code: code.trim().toUpperCase(),
+          nickname,
+          character,
+          statusMessage: (statusMessage || "").trim().slice(0, 40),
+        },
         resolve,
       );
     });
@@ -198,6 +208,18 @@ export function useRoomSocket(opts: Options) {
     if (!trimmed) return;
     socketRef.current?.emit(SocketEvents.ChatSend, { text: trimmed });
   }, []);
+
+  const publishStatusMessage = useCallback(
+    (statusMessage: string) => {
+      const next = statusMessage.trim().slice(0, 40);
+      socketRef.current?.emit(SocketEvents.MemberProfile, { statusMessage: next });
+      if (!memberId) return;
+      setMembers((prev) =>
+        prev.map((m) => (m.id === memberId ? { ...m, statusMessage: next } : m)),
+      );
+    },
+    [memberId],
+  );
 
   const publishState = useCallback(
     (state: CharState) => {
@@ -263,6 +285,7 @@ export function useRoomSocket(opts: Options) {
     leaveRoom,
     sendChat,
     publishState,
+    publishStatusMessage,
     toggleLocalMotion,
   };
 }

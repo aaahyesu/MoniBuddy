@@ -84,6 +84,7 @@ export function App() {
     serverUrl: profile.serverUrl,
     nickname: profile.nickname,
     character: profile.character,
+    statusMessage: profile.statusMessage,
     forcePolling: profile.forcePolling,
   });
 
@@ -176,6 +177,12 @@ export function App() {
     profile.character,
     profile.statusMessage,
   ]);
+
+  // 상태메시지 변경 → 방 멤버에게 동기화
+  useEffect(() => {
+    if (!room.roomCode || !room.memberId || room.memberId === "local") return;
+    room.publishStatusMessage(profile.statusMessage || "");
+  }, [profile.statusMessage, room.roomCode, room.memberId, room.publishStatusMessage]);
 
   const activeBuddyId = useMemo(
     () => (profile.character.kind === "buddy" ? profile.character.id : null),

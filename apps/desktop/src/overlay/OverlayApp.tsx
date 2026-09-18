@@ -171,6 +171,23 @@ export function OverlayApp() {
       moveRef.current = next;
       return next;
     });
+    // 피어에 바로 반영되도록 본인 CharState에도 심어 둠
+    setMembers((prev) =>
+      prev.map((m) => {
+        if (!isSelfMember(m, selfIdRef.current) && m.id !== "local") return m;
+        return {
+          ...m,
+          state: {
+            ...m.state,
+            ...(partial.speed != null ? { speed: partial.speed } : {}),
+            ...(partial.pathMode != null ? { pathMode: partial.pathMode } : {}),
+            ...(partial.walking != null
+              ? { motion: partial.walking ? "walk" : "idle" }
+              : {}),
+          },
+        };
+      }),
+    );
   };
 
   useEffect(() => {
@@ -212,6 +229,7 @@ export function OverlayApp() {
                   ...m,
                   nickname: profile.nickname || m.nickname,
                   character: profile.character,
+                  statusMessage: (profile.statusMessage || "").trim(),
                 }
               : m;
             if (!old) return synced;
@@ -227,6 +245,9 @@ export function OverlayApp() {
                     ? "walk"
                     : "idle"
                   : synced.state.motion,
+                // 본인 이동 설정은 로컬이 권위, 피어는 수신 state 유지
+                speed: self ? moveRef.current.speed : synced.state.speed,
+                pathMode: self ? moveRef.current.pathMode : synced.state.pathMode,
               },
             };
           });
@@ -243,8 +264,11 @@ export function OverlayApp() {
               state: {
                 ...(prevLocal?.state ?? defaultCharState(0.12)),
                 motion: moveRef.current.walking ? "walk" : "idle",
+                speed: moveRef.current.speed,
+                pathMode: moveRef.current.pathMode,
               },
               offset: 12,
+              statusMessage: (profile.statusMessage || "").trim(),
             },
           ];
         });
@@ -306,12 +330,29 @@ export function OverlayApp() {
           prev.map((m) => {
             const self = isSelfMember(m, selfIdRef.current);
             if (self && !walking) {
-              if (m.state.motion === "idle") return m;
-              return { ...m, state: { ...m.state, motion: "idle" } };
+              if (m.state.motion === "idle" && m.state.speed === speed && m.state.pathMode === pathMode) {
+                return m;
+              }
+              return {
+                ...m,
+                state: { ...m.state, motion: "idle", speed, pathMode },
+              };
             }
-            if (m.state.motion !== "walk") return m;
-            const walkSpeed = self ? speed : speed * 0.9;
-            const mode = self ? pathMode : "all";
+            if (m.state.motion !== "walk") {
+              // 피어 idle이어도 speed/pathMode는 최신 수신값 유지
+              return m;
+            }
+            const walkSpeed = self
+              ? speed
+              : typeof m.state.speed === "number"
+                ? m.state.speed
+                : speed * 0.9;
+            const peerMode = m.state.pathMode;
+            const mode: PathMode = self
+              ? pathMode
+              : peerMode && PATH_MODES.has(peerMode)
+                ? peerMode
+                : "all";
             const inset = self ? FIXED_INSET : 28 + m.offset;
             const progress = advanceProgress(m.state.progress, dt, walkSpeed);
             const pt = pointOnBorder(size.w, size.h, inset, progress, mode);
@@ -322,6 +363,7 @@ export function OverlayApp() {
                 progress,
                 edge: pt.edge,
                 facing: pt.facing,
+                ...(self ? { speed, pathMode } : {}),
               },
             };
           }),
@@ -567,7 +609,12 @@ export function OverlayApp() {
     return members.map((m) => {
       const self = isSelfMember(m, selfIdRef.current);
       const inset = self ? FIXED_INSET : 28 + m.offset;
-      const mode = self ? move.pathMode : "all";
+      const peerMode = m.state.pathMode;
+      const mode: PathMode = self
+        ? move.pathMode
+        : peerMode && PATH_MODES.has(peerMode)
+          ? peerMode
+          : "all";
       const pt = pointOnBorder(size.w, size.h, inset, m.state.progress, mode);
       const bubble = bubbles.find((b) => b.memberId === m.id);
       return {
@@ -617,11 +664,17 @@ export function OverlayApp() {
           }
         >
           {bubble && <div className="bubble">{bubble.text}</div>}
-          {isSelf && statusMessage && (
-            <div className={`status-bubble${bubble ? " with-chat" : ""}`}>
-              {statusMessage}
-            </div>
-          )}
+          {(() => {
+            const statusText = (
+              isSelf ? statusMessage : member.statusMessage || ""
+            ).trim();
+            if (!statusText) return null;
+            return (
+              <div className={`status-bubble${bubble ? " with-chat" : ""}`}>
+                {statusText}
+              </div>
+            );
+          })()}
           {isSelf && !bubble && !statusMessage && !panelOpen && (
             <div className="tap-hint">나</div>
           )}

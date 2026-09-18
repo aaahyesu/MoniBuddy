@@ -1,10 +1,10 @@
-import type { Edge } from "@monibuddy/shared";
+import type { Edge, PathMode } from "@monibuddy/shared";
 
 export type BorderPoint = { x: number; y: number; edge: Edge; facing: 1 | -1 };
 
-/** Which screen edges the buddy may walk on. */
-export type PathMode = "all" | "top" | "bottom" | "left" | "right";
+export type { PathMode };
 
+/** Which screen edges the buddy may walk on. */
 export const PATH_MODE_OPTIONS: Array<{ value: PathMode; label: string }> = [
   { value: "all", label: "사방 전체" },
   { value: "bottom", label: "하단만" },

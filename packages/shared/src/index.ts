@@ -62,11 +62,17 @@ export function defaultScaleForStage(stage: GrowthStage): number {
   return 1;
 }
 
+export type PathMode = "all" | "top" | "bottom" | "left" | "right";
+
 export type CharState = {
   motion: CharMotion;
   edge: Edge;
   progress: number;
   facing: 1 | -1;
+  /** 테두리 이동 속도 (progress/sec). 피어 동기화용 */
+  speed?: number;
+  /** 이동 가능 변. 피어 동기화용 */
+  pathMode?: PathMode;
 };
 
 export type Member = {
@@ -75,6 +81,8 @@ export type Member = {
   character: Character;
   state: CharState;
   offset: number;
+  /** 캐릭터 위 상시 상태메시지 (피어 동기화) */
+  statusMessage?: string;
 };
 
 export type ChatMessage = {
@@ -99,17 +107,20 @@ export const SocketEvents = {
   ChatSend: "chat:send",
   ChatBroadcast: "chat:broadcast",
   CharState: "char:state",
+  MemberProfile: "member:profile",
 } as const;
 
 export type RoomCreatePayload = {
   nickname: string;
   character: Character;
+  statusMessage?: string;
 };
 
 export type RoomJoinPayload = {
   code: string;
   nickname: string;
   character: Character;
+  statusMessage?: string;
 };
 
 export type RoomCreateAck =
@@ -126,6 +137,10 @@ export type ChatSendPayload = {
 
 export type CharStatePayload = {
   state: CharState;
+};
+
+export type MemberProfilePayload = {
+  statusMessage?: string;
 };
 
 export const PART_CATALOG = {
@@ -154,6 +169,8 @@ export function defaultCharState(offset = 0): CharState {
     edge: "top",
     progress: Math.min(0.95, Math.max(0, offset)),
     facing: 1,
+    speed: 0.011,
+    pathMode: "all",
   };
 }
 
