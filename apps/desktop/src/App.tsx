@@ -32,6 +32,8 @@ export function App() {
     profile,
     setNickname,
     setCharacter,
+    setServerUrl,
+    setForcePolling,
     completeOnboarding,
     resetOnboarding,
     ready,
@@ -82,6 +84,7 @@ export function App() {
     serverUrl: profile.serverUrl,
     nickname: profile.nickname,
     character: profile.character,
+    forcePolling: profile.forcePolling,
   });
 
   useEffect(() => {
@@ -249,6 +252,33 @@ export function App() {
             onChange={(e) => setNickname(e.target.value)}
           />
         </Field>
+        <Field label="서버 URL">
+          <input
+            className={inputClass}
+            value={profile.serverUrl}
+            onChange={(e) => setServerUrl(e.target.value.trim())}
+            placeholder="https://monibuddy-server.onrender.com"
+          />
+        </Field>
+        <label className="flex cursor-pointer items-start gap-3 text-left text-[0.82rem] text-white/90">
+          <input
+            type="checkbox"
+            className="mt-1 size-4 shrink-0 accent-white"
+            checked={profile.forcePolling}
+            onChange={(e) => setForcePolling(e.target.checked)}
+          />
+          <span>
+            회사망 호환 (HTTPS 폴링만)
+            <span className="mt-1 block text-[0.72rem] leading-relaxed text-mute">
+              WebSocket이 막힌 망에서 켜 두세요. Wi‑Fi에서 더 빠르게 쓰려면 끌 수 있어요.
+            </span>
+          </span>
+        </label>
+        <p className="m-0 text-[0.72rem] leading-relaxed text-mute">
+          연결이 안 되면 위 주소가{" "}
+          <span className="text-accent-cyan">https://monibuddy-server.onrender.com</span>{" "}
+          인지 확인하세요. Render 무료 서버는 첫 접속에 30초 걸릴 수 있어요.
+        </p>
         <p className="mb-0 text-[0.9rem] text-mute">캐릭터</p>
         <SimpleBuddyPicker
           character={profile.character}
@@ -310,6 +340,7 @@ export function App() {
         roomCode={room.roomCode}
         connected={room.connected}
         error={room.error}
+        forcePolling={profile.forcePolling}
         onEditProfile={() => setScreen("profile")}
         onOpenRoomInfo={() => setScreen("room")}
         onShowOverlay={

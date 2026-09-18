@@ -11,6 +11,7 @@ type Props = {
   roomCode: string | null;
   connected: boolean;
   error: string | null;
+  forcePolling?: boolean;
   onEditProfile: () => void;
   onShowOverlay?: () => void;
   onOpenRoomInfo?: () => void;
@@ -24,6 +25,7 @@ export function RoomLobby({
   roomCode,
   connected,
   error,
+  forcePolling = true,
   onEditProfile,
   onShowOverlay,
   onOpenRoomInfo,
@@ -48,10 +50,14 @@ export function RoomLobby({
 
       {!connected && (
         <p className="m-0 text-[0.78rem] text-danger">
-          서버 연결 중… 서버가 켜져 있는지 확인해 주세요
+          서버 연결 중… 첫 접속은 Render 깨우느라 최대 1분 걸릴 수 있어요
         </p>
       )}
-      {error && <p className="m-0 text-[0.78rem] text-danger">{error}</p>}
+      {error && <p className="m-0 break-all text-[0.78rem] text-danger">{error}</p>}
+      <p className="m-0 break-all text-[0.68rem] text-mute">서버: {serverUrl}</p>
+      <p className="m-0 text-[0.68rem] text-mute">
+        전송: {forcePolling ? "HTTPS 폴링 (회사망 호환)" : "WebSocket 허용"}
+      </p>
 
       <div className="pixel-divider" />
 

@@ -14,7 +14,13 @@ type Options = {
   serverUrl: string;
   nickname: string;
   character: Character;
+  /** true면 WebSocket 없이 HTTPS 폴링만 사용 (회사망 호환) */
+  forcePolling?: boolean;
 };
+
+function normalizeBase(url: string) {
+  return url.replace(/\/$/, "");
+}
 
 export function useRoomSocket(opts: Options) {
   const socketRef = useRef<Socket | null>(null);
@@ -27,57 +33,84 @@ export function useRoomSocket(opts: Options) {
   const seenIds = useRef(new Set<string>());
   const optsRef = useRef(opts);
   optsRef.current = opts;
+  const forcePolling = opts.forcePolling !== false;
 
   useEffect(() => {
-    const socket = io(opts.serverUrl, {
-      transports: ["websocket", "polling"],
-      autoConnect: true,
-      reconnection: true,
-    });
-    socketRef.current = socket;
+    let cancelled = false;
+    let socket: Socket | null = null;
+    const base = normalizeBase(opts.serverUrl);
 
-    const onConnect = () => {
-      setConnected(true);
-      setError(null);
-    };
-    const onDisconnect = () => setConnected(false);
-    const onConnectError = () => {
+    const connect = async () => {
       setConnected(false);
-      setError("서버에 연결할 수 없습니다.");
-    };
-    const onSync = (snap: RoomSnapshot) => {
-      setRoomCode(snap.code);
-      setMembers(snap.members);
-    };
-    const onChat = (msg: ChatMessage) => {
-      if (seenIds.current.has(msg.id)) return;
-      seenIds.current.add(msg.id);
-      setMessages((prev) => [...prev, msg].slice(-50));
-    };
-    const onChar = (payload: { memberId: string; state: CharState }) => {
-      setMembers((prev) =>
-        prev.map((m) => (m.id === payload.memberId ? { ...m, state: payload.state } : m)),
-      );
+      setError(null);
+
+      // Render 슬립 깨우기 (첫 요청이 수십 초 걸릴 수 있음)
+      try {
+        await fetch(`${base}/health`, { cache: "no-store", mode: "cors" });
+      } catch {
+        /* socket 쪽에서 재시도 */
+      }
+      if (cancelled) return;
+
+      // 회사망은 WS 업그레이드를 막는 경우가 많아 기본은 HTTPS 폴링만 사용
+      socket = io(base, {
+        transports: forcePolling ? ["polling"] : ["polling", "websocket"],
+        upgrade: !forcePolling,
+        rememberUpgrade: false,
+        forceBase64: forcePolling,
+        autoConnect: true,
+        reconnection: true,
+        reconnectionAttempts: 12,
+        reconnectionDelay: 1500,
+        timeout: 45000,
+      });
+      socketRef.current = socket;
+
+      const onConnect = () => {
+        setConnected(true);
+        setError(null);
+      };
+      const onDisconnect = () => setConnected(false);
+      const onConnectError = (err: Error) => {
+        setConnected(false);
+        setError(
+          `서버에 연결할 수 없습니다. (${base}) ${err?.message ? `— ${err.message}` : ""}`.trim(),
+        );
+      };
+      const onSync = (snap: RoomSnapshot) => {
+        setRoomCode(snap.code);
+        setMembers(snap.members);
+      };
+      const onChat = (msg: ChatMessage) => {
+        if (seenIds.current.has(msg.id)) return;
+        seenIds.current.add(msg.id);
+        setMessages((prev) => [...prev, msg].slice(-50));
+      };
+      const onChar = (payload: { memberId: string; state: CharState }) => {
+        setMembers((prev) =>
+          prev.map((m) => (m.id === payload.memberId ? { ...m, state: payload.state } : m)),
+        );
+      };
+
+      socket.on("connect", onConnect);
+      socket.on("disconnect", onDisconnect);
+      socket.on("connect_error", onConnectError);
+      socket.on(SocketEvents.MemberSync, onSync);
+      socket.on(SocketEvents.ChatBroadcast, onChat);
+      socket.on(SocketEvents.CharState, onChar);
     };
 
-    socket.on("connect", onConnect);
-    socket.on("disconnect", onDisconnect);
-    socket.on("connect_error", onConnectError);
-    socket.on(SocketEvents.MemberSync, onSync);
-    socket.on(SocketEvents.ChatBroadcast, onChat);
-    socket.on(SocketEvents.CharState, onChar);
+    void connect();
 
     return () => {
-      socket.off("connect", onConnect);
-      socket.off("disconnect", onDisconnect);
-      socket.off("connect_error", onConnectError);
-      socket.off(SocketEvents.MemberSync, onSync);
-      socket.off(SocketEvents.ChatBroadcast, onChat);
-      socket.off(SocketEvents.CharState, onChar);
-      socket.disconnect();
+      cancelled = true;
+      if (socket) {
+        socket.removeAllListeners();
+        socket.disconnect();
+      }
       socketRef.current = null;
     };
-  }, [opts.serverUrl]);
+  }, [opts.serverUrl, forcePolling]);
 
   // Forward overlay self motion to peers
   useEffect(() => {

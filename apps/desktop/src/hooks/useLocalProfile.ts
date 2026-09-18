@@ -11,19 +11,21 @@ export type LocalProfile = {
   serverUrl: string;
   onboardingDone: boolean;
   statusMessage: string;
+  /** 회사망 호환: WebSocket 대신 HTTPS 폴링만 사용 (기본 true) */
+  forcePolling: boolean;
 };
 
 function normalizeServerUrl(saved: string | undefined): string {
-  const url = (saved || "").trim();
-  if (!url) return DEFAULT_SERVER;
-  // 설치본에서 예전에 저장된 localhost는 공용 서버로 교체
+  const url = (saved || "").trim().replace(/\/$/, "");
+  if (!url || url === "http://" || url === "https://") return DEFAULT_SERVER;
+  // 설치본에 남은 localhost는 공용 Render 서버로 교체
   if (
     import.meta.env.PROD &&
     (url.includes("127.0.0.1") || url.includes("localhost"))
   ) {
     return DEFAULT_SERVER;
   }
-  return url.replace(/\/$/, "");
+  return url;
 }
 
 function normalizeCharacter(c: Character): Character {
@@ -58,6 +60,8 @@ function load(): LocalProfile {
         serverUrl: normalizeServerUrl(parsed.serverUrl),
         onboardingDone: Boolean(parsed.onboardingDone),
         statusMessage: (parsed.statusMessage || "").slice(0, 40),
+        // 기존 설치본은 필드 없음 → 회사망 대비 기본 ON
+        forcePolling: parsed.forcePolling !== false,
       };
     }
   } catch {
@@ -75,6 +79,7 @@ function load(): LocalProfile {
     serverUrl: DEFAULT_SERVER,
     onboardingDone: false,
     statusMessage: "",
+    forcePolling: true,
   };
 }
 
@@ -136,6 +141,10 @@ export function useLocalProfile() {
     setProfile((p) => ({ ...p, serverUrl }));
   }, []);
 
+  const setForcePolling = useCallback((forcePolling: boolean) => {
+    setProfile((p) => ({ ...p, forcePolling }));
+  }, []);
+
   const completeOnboarding = useCallback(() => {
     setProfile((p) => ({
       ...p,
@@ -154,6 +163,7 @@ export function useLocalProfile() {
     setCharacter,
     setStatusMessage,
     setServerUrl,
+    setForcePolling,
     completeOnboarding,
     resetOnboarding,
     ready,
