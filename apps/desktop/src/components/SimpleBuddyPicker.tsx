@@ -76,7 +76,7 @@ export function SimpleBuddyPicker({
         <div className="text-center text-[0.78rem] text-[#4a5060]">{selectedLabel}</div>
       </div>
 
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-3 gap-2">
         {BUDDY_GROUPS.map((g) => (
           <button
             key={g.id}

@@ -15,7 +15,7 @@ export type BuddyStageDef = {
   label?: string;
 };
 
-export type BuddyGroup = "ank" | "gnd";
+export type BuddyGroup = "ank" | "gnd" | "reward";
 
 export type BuddyDef = {
   id: string;
@@ -167,7 +167,10 @@ export function toBuddyCharacter(def: BuddyDef, xp = 0): BuddyCharacter {
 }
 
 export function buddyGroupOf(def: BuddyDef | undefined): BuddyGroup {
-  if (def?.group === "gnd" || def?.group === "ank") return def.group;
+  if (def?.group === "reward" || def?.group === "gnd" || def?.group === "ank") {
+    return def.group;
+  }
+  if (def?.id?.startsWith("reward_")) return "reward";
   if (def?.id?.startsWith("gnd_")) return "gnd";
   return "ank";
 }
@@ -175,6 +178,7 @@ export function buddyGroupOf(def: BuddyDef | undefined): BuddyGroup {
 export const BUDDY_GROUPS: Array<{ id: BuddyGroup; label: string }> = [
   { id: "ank", label: "안경만두" },
   { id: "gnd", label: "가나디" },
+  { id: "reward", label: "리워드" },
 ];
 
 export function applyGrowthToBuddy(

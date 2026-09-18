@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { Btn } from "./ui";
 import {
   canUseUpdater,
   checkForUpdate,
@@ -12,21 +11,21 @@ function statusText(status: UpdateStatus): string {
     case "checking":
       return "업데이트 확인 중…";
     case "available":
-      return `새 버전 v${status.version} 이 있어요`;
+      return `새 버전 v${status.version}`;
     case "downloading":
-      return `v${status.version} 다운로드 중…`;
+      return `v${status.version} 받는 중…`;
     case "installing":
-      return "설치 후 재시작합니다…";
+      return "설치 후 재시작…";
     case "upToDate":
       return "최신 버전입니다";
     case "error":
-      return `업데이트 확인 실패: ${status.message}`;
+      return `확인 실패: ${status.message}`;
     default:
-      return "업데이트를 확인할 수 있어요";
+      return "업데이트";
   }
 }
 
-/** 설정 창 공통 — 온보딩/로비/프로필 상단에 표시 */
+/** 설정 창 공통 — 한 줄 컴팩트 배너 */
 export function UpdateBanner() {
   const [status, setStatus] = useState<UpdateStatus>({ kind: "idle" });
   const [busy, setBusy] = useState(false);
@@ -43,9 +42,9 @@ export function UpdateBanner() {
     status.kind === "downloading" || status.kind === "installing";
 
   return (
-    <div className="grid gap-2 border border-accent-cyan/50 bg-black/50 p-3 text-left">
+    <div className="flex items-center gap-2 border border-white/40 bg-black/40 px-2.5 py-1.5 text-left">
       <p
-        className={`m-0 text-[0.82rem] leading-relaxed ${
+        className={`m-0 min-w-0 flex-1 truncate text-[0.72rem] leading-none ${
           status.kind === "error"
             ? "text-danger"
             : available
@@ -56,29 +55,29 @@ export function UpdateBanner() {
         {statusText(status)}
       </p>
       {available ? (
-        <Btn
-          variant="primary"
-          size="md"
+        <button
+          type="button"
           disabled={busy || installing}
+          className="shrink-0 border border-white bg-white px-2 py-0.5 text-[0.68rem] font-bold text-black disabled:opacity-50"
           onClick={() => {
             setBusy(true);
             void installPendingUpdate(setStatus).finally(() => setBusy(false));
           }}
         >
-          {busy || installing ? "설치 중…" : "지금 업데이트"}
-        </Btn>
+          {busy || installing ? "설치 중" : "업데이트"}
+        </button>
       ) : (
-        <Btn
-          variant="ghost"
-          size="md"
+        <button
+          type="button"
           disabled={busy || installing || status.kind === "checking"}
+          className="shrink-0 border border-white/50 px-2 py-0.5 text-[0.68rem] text-white/80 disabled:opacity-50"
           onClick={() => {
             setBusy(true);
             void checkForUpdate(setStatus).finally(() => setBusy(false));
           }}
         >
-          {busy || status.kind === "checking" ? "확인 중…" : "다시 확인"}
-        </Btn>
+          {busy || status.kind === "checking" ? "확인 중" : "확인"}
+        </button>
       )}
     </div>
   );
