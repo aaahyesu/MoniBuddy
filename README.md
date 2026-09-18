@@ -200,6 +200,11 @@ npm run start -w @monibuddy/server
 
 `main`에 push 하면 GitHub Actions가 `.exe` 설치본을 빌드해 [Releases](https://github.com/aaahyesu/MoniBuddy/releases)에 올립니다.
 
+설치본(v0.1.2+)은 실행 시 GitHub Releases의 `latest.json`을 확인해 **자동 업데이트**합니다.  
+서명용 Secret `TAURI_SIGNING_PRIVATE_KEY`가 리포에 있어야 릴리즈 아티팩트에 `.sig` / `latest.json`이 포함됩니다.
+
+> 자동 업데이트가 처음 들어간 버전은 한 번 수동 설치해야 이후부터 자동 반영됩니다.
+
 ---
 
 ## 기본 캐릭터(버디) 추가

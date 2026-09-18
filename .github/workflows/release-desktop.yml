@@ -42,6 +42,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VITE_MONIBUDDY_SERVER_URL: ${{ vars.MONIBUDDY_SERVER_URL }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          # 키 생성 시 비밀번호 없음 — 시크릿에 잘못 넣은 값이 있어도 빈 문자열 사용
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         with:
           projectPath: apps/desktop
           tagName: v__VERSION__
@@ -50,8 +53,9 @@ jobs:
             ## MoniBuddy Windows 설치본
 
             - `MoniBuddy_*_x64-setup.exe` 를 받아 설치하세요.
+            - 이미 설치되어 있으면 앱이 자동으로 업데이트를 확인합니다.
             - 기본 서버: https://monibuddy-server.onrender.com (또는 repo Variable `MONIBUDDY_SERVER_URL`)
             - 로컬 서버를 쓰려면 앱에서 서버 URL을 `http://127.0.0.1:3847` 로 바꾸면 됩니다.
           releaseDraft: false
           prerelease: false
-          includeUpdaterJson: false
+          includeUpdaterJson: true

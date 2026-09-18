@@ -335,6 +335,7 @@ pub fn run() {
             MacosLauncher::LaunchAgent,
             Some(vec!["--autostart"]),
         ))
+        .plugin(tauri_plugin_process::init())
         .invoke_handler(tauri::generate_handler![
             set_click_through,
             show_settings,
@@ -342,6 +343,10 @@ pub fn run() {
             get_cursor_pos
         ])
         .setup(|app| {
+            #[cfg(desktop)]
+            app.handle()
+                .plugin(tauri_plugin_updater::Builder::new().build())?;
+
             setup_overlay(app.handle())?;
             spawn_capture_yield_watcher(app.handle().clone());
 

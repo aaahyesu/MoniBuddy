@@ -8,6 +8,7 @@ uploads/
 .env.local
 *.local
 .idea/
+.secrets/
 README.md~
 apps/desktop/src-tauri/gen/
 apps/desktop/src-tauri/target/
@@ -15,3 +16,4 @@ packages/shared/dist/
 apps/server/dist/
 apps/desktop/dist/
 apps/desktop/tsconfig.tsbuildinfo
+apps/desktop/.vite/

@@ -1,6 +1,6 @@
 [package]
 name = "monibuddy"
-version = "0.1.1"
+version = "0.1.2"
 description = "MoniBuddy — monitor-edge character buddies with invite chat"
 authors = ["MoniBuddy"]
 edition = "2021"
@@ -17,3 +17,7 @@ tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-autostart = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+tauri-plugin-process = "2.3.1"
+
+[target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
+tauri-plugin-updater = "2.11.0"

@@ -2,6 +2,7 @@ import { APP_NAME } from "@monibuddy/shared";
 import { CharacterView } from "./CharacterView";
 import type { Character } from "@monibuddy/shared";
 import { Brand, Btn, SectionLabel, ShellCard } from "./ui";
+import { UpdateBanner } from "./UpdateBanner";
 
 type Props = {
   nickname: string;
@@ -33,6 +34,7 @@ export function RoomLobby({
   return (
     <ShellCard>
       <Brand title={APP_NAME} subtitle={`HELLO, ${nickname}`} />
+      <UpdateBanner />
 
       <SectionLabel tone="pink">Profile</SectionLabel>
       <button
