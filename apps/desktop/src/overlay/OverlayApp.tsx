@@ -730,6 +730,15 @@ export function OverlayApp() {
         >
           {plusOpen && (
             <div className="composer-plus-menu">
+              <button
+                type="button"
+                onClick={() => {
+                  void invokeSafe("show_settings");
+                  closePanel();
+                }}
+              >
+                설정 창 열기
+              </button>
               {!inRoom && !joinOpen && (
                 <>
                   <button

@@ -34,11 +34,61 @@ fn set_click_through(app: AppHandle, enabled: bool) -> Result<(), String> {
 
 #[tauri::command]
 fn show_settings(app: AppHandle) -> Result<(), String> {
-    if let Some(win) = app.get_webview_window("settings") {
-        win.show().map_err(|e| e.to_string())?;
-        win.set_focus().map_err(|e| e.to_string())?;
+    // 전체화면 alwaysOnTop 오버레이가 설정 창을 가리지 않게
+    if let Some(overlay) = app.get_webview_window("overlay") {
+        let _ = overlay.set_always_on_top(false);
     }
+
+    let created = app.get_webview_window("settings").is_none();
+    let win = match app.get_webview_window("settings") {
+        Some(w) => w,
+        None => WebviewWindowBuilder::new(&app, "settings", WebviewUrl::App("index.html".into()))
+            .title("MoniBuddy")
+            .inner_size(920.0, 720.0)
+            .resizable(true)
+            .visible(true)
+            .build()
+            .map_err(|e| e.to_string())?,
+    };
+    if created {
+        attach_settings_close_handler(&app);
+    }
+
+    let _ = win.unminimize();
+    let _ = win.set_always_on_top(true);
+    win.show().map_err(|e| e.to_string())?;
+    win.set_focus().map_err(|e| e.to_string())?;
     Ok(())
+}
+
+fn restore_overlay_topmost(app: &AppHandle) {
+    if !OVERLAY_USER_VISIBLE.load(Ordering::SeqCst) {
+        return;
+    }
+    if YIELD_STATE.load(Ordering::SeqCst) != 0 {
+        return;
+    }
+    if let Some(overlay) = app.get_webview_window("overlay") {
+        let _ = overlay.set_always_on_top(true);
+    }
+}
+
+fn attach_settings_close_handler(app: &AppHandle) {
+    let Some(win) = app.get_webview_window("settings") else {
+        return;
+    };
+    let app = app.clone();
+    win.on_window_event(move |event| {
+        if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+            // X → 파괴하지 않고 숨김 (트레이에서 다시 열기)
+            api.prevent_close();
+            if let Some(w) = app.get_webview_window("settings") {
+                let _ = w.hide();
+                let _ = w.set_always_on_top(false);
+            }
+            restore_overlay_topmost(&app);
+        }
+    });
 }
 
 #[tauri::command]
@@ -359,7 +409,7 @@ pub fn run() {
             let _tray = TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
                 .menu(&menu)
-                .tooltip("MoniBuddy")
+                .tooltip("MoniBuddy — 클릭: 설정 열기")
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "show" => {
                         let _ = show_settings(app.clone());
@@ -402,6 +452,7 @@ pub fn run() {
                     .inner_size(920.0, 720.0)
                     .build();
             }
+            attach_settings_close_handler(app.handle());
 
             Ok(())
         })
