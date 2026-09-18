@@ -636,10 +636,12 @@ export function OverlayApp() {
 
   return (
     <div className="overlay-root">
-      {actors.map(({ member, x, y, facing, bubble, isSelf }) => (
+      {actors.map(({ member, x, y, facing, bubble, isSelf }) => {
+        const edge = member.state.edge || "top";
+        return (
         <div
           key={member.id}
-          className={`actor${isSelf ? " self" : ""}${isSelf && dragging ? " dragging" : ""}${isSelf && repositionMode ? " reposition" : ""}`}
+          className={`actor edge-${edge}${isSelf ? " self" : ""}${isSelf && dragging ? " dragging" : ""}${isSelf && repositionMode ? " reposition" : ""}`}
           style={{ left: x, top: y, cursor: isSelf ? "grab" : undefined }}
           onPointerDown={(e) => {
             if (!isSelf) return;
@@ -699,7 +701,8 @@ export function OverlayApp() {
             }
           />
         </div>
-      ))}
+        );
+      })}
 
       {panelOpen && !repositionMode && (
         <div

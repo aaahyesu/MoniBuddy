@@ -582,6 +582,34 @@ input::placeholder {
   bottom: calc(100% + 42px);
 }
 
+/* 상단 변: 말풍선·상태메시지를 캐릭터 아래로 (화면 밖 방지) */
+.actor.edge-top .bubble {
+  bottom: auto;
+  top: calc(100% + 6px);
+}
+
+.actor.edge-top .bubble::after {
+  top: auto;
+  bottom: 100%;
+  border-top-color: transparent;
+  border-bottom-color: rgba(255, 255, 255, 0.95);
+}
+
+.actor.edge-top .status-bubble {
+  bottom: auto;
+  top: calc(100% + 6px);
+}
+
+.actor.edge-top .status-bubble.with-chat {
+  bottom: auto;
+  top: calc(100% + 42px);
+}
+
+.actor.edge-top .tap-hint {
+  bottom: auto;
+  top: calc(100% + 4px);
+}
+
 .parts-stack {
   position: relative;
   width: 96px;
