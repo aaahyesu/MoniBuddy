@@ -28,6 +28,7 @@ import {
   createInviteCode,
   defaultCharState,
 } from "@monibuddy/shared";
+import { mountDesktopUpdaterProxy } from "./desktopUpdater";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const UPLOAD_DIR = path.resolve(__dirname, "../uploads");
@@ -77,6 +78,8 @@ const upload = multer({
 app.get("/health", (_req, res) => {
   res.json({ ok: true, service: "monibuddy-server" });
 });
+
+mountDesktopUpdaterProxy(app);
 
 app.post("/assets", upload.single("file"), (req, res) => {
   if (!req.file) {
