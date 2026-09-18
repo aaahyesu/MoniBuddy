@@ -1,0 +1,26 @@
+name: 기능 요청
+description: 새로운 기능이나 개선을 제안합니다
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 배경 / 문제
+      description: 왜 이 기능이 필요한가요?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 제안
+      description: 어떻게 동작하면 좋을까요?
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: 기타
+      description: 대안, 참고 링크 등
+    validations:
+      required: false

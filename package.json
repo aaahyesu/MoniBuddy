@@ -1,0 +1,19 @@
+{
+  "name": "monibuddy",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:server": "npm run dev -w @monibuddy/server",
+    "dev:desktop": "npm run tauri:dev -w @monibuddy/desktop",
+    "dev:ui": "npm run dev -w @monibuddy/desktop",
+    "dev:app": "npm run dev:server",
+    "build": "npm run build -w @monibuddy/shared && npm run build -w @monibuddy/server && npm run build -w @monibuddy/desktop",
+    "build:shared": "npm run build -w @monibuddy/shared",
+    "tauri:build": "npm run tauri:build -w @monibuddy/desktop",
+    "smoke": "node scripts/smoke-room.mjs"
+  }
+}
