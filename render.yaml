@@ -9,11 +9,10 @@ services:
     plan: free
     region: singapore
     rootDir: .
-    buildCommand: npm install && npm run build:shared && npm run build -w @monibuddy/server
+    # production 설치면 @types/typescript가 빠져 tsc 빌드가 실패함
+    buildCommand: npm install --include=dev && npm run build:shared && npm run build -w @monibuddy/server
     startCommand: npm run start -w @monibuddy/server
     healthCheckPath: /health
     envVars:
       - key: NODE_VERSION
         value: "20"
-      - key: NODE_ENV
-        value: production
