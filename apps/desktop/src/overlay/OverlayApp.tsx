@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   BUBBLE_TTL_MS,
+  BUDDY_MIN_DISPLAY_SIZE,
   MAX_CHAT_LENGTH,
   type ChatMessage,
   type Character,
-  DEFAULT_SERVER_URL,
   type Member,
   defaultCharState,
 } from "@monibuddy/shared";
+import { resolveDefaultServerUrl } from "../lib/serverUrl";
 import { CharacterView } from "../components/CharacterView";
 import {
   advanceProgress,
@@ -65,15 +66,9 @@ function readRuntime(): Runtime | null {
 }
 
 function readActiveRoomCode(rt: Runtime | null): string | null {
+  // 설정 창 runtime이 권위. ROOM_KEY만 남은 stale 값으로 유령 멤버를 그리지 않음
   if (rt?.roomCode) return rt.roomCode;
-  try {
-    const raw = localStorage.getItem(ROOM_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as { code?: string };
-    return parsed.code || null;
-  } catch {
-    return null;
-  }
+  return null;
 }
 
 function readMoveSettings(): MoveSettings {
@@ -99,7 +94,23 @@ function writeMoveSettings(next: MoveSettings) {
 }
 
 function isSelfMember(m: Member, selfId: string) {
-  return m.id === selfId || m.id === "local";
+  // 방에 들어간 뒤에는 실제 memberId만 본인으로 본다 (local 잔상과 중복 방지)
+  if (selfId && selfId !== "local") return m.id === selfId;
+  return m.id === "local";
+}
+
+function normalizeOverlayMembers(
+  members: Member[],
+  selfId: string,
+  inRoom: boolean,
+): Member[] {
+  const filtered =
+    inRoom && selfId !== "local"
+      ? members.filter((m) => m.id !== "local")
+      : members;
+  const byId = new Map<string, Member>();
+  for (const m of filtered) byId.set(m.id, m);
+  return [...byId.values()];
 }
 
 export function OverlayApp() {
@@ -112,7 +123,7 @@ export function OverlayApp() {
   const [size, setSize] = useState({ w: window.innerWidth, h: window.innerHeight });
   const [members, setMembers] = useState<Member[]>([]);
   const [bubbles, setBubbles] = useState<Bubble[]>([]);
-  const [serverUrl, setServerUrl] = useState(DEFAULT_SERVER_URL);
+  const [serverUrl, setServerUrl] = useState(resolveDefaultServerUrl);
   const [buddyDefs, setBuddyDefs] = useState<BuddyDef[]>([]);
   const [panelOpen, setPanelOpen] = useState(false);
   const [plusOpen, setPlusOpen] = useState(false);
@@ -178,23 +189,36 @@ export function OverlayApp() {
       const profile = readProfile();
       const rt = readRuntime();
       const roomCode = readActiveRoomCode(rt);
-      setServerUrl(rt?.serverUrl || profile.serverUrl || DEFAULT_SERVER_URL);
+      setServerUrl(rt?.serverUrl || profile.serverUrl || resolveDefaultServerUrl());
       selfIdRef.current = rt?.memberId || "local";
       setInRoom(Boolean(roomCode));
       setRoomCode(roomCode);
       setStatusMessage((profile.statusMessage || rt?.statusMessage || "").trim());
 
-      if (rt?.members?.length) {
+      if (rt?.roomCode && rt.members?.length) {
+        const list = normalizeOverlayMembers(
+          rt.members,
+          selfIdRef.current,
+          true,
+        );
         setMembers((prev) => {
           const byId = new Map(prev.map((m) => [m.id, m]));
-          return rt.members.map((m) => {
+          return list.map((m) => {
             const old = byId.get(m.id);
-            if (!old) return m;
             const self = isSelfMember(m, selfIdRef.current);
+            // 설정 창에서 고른 캐릭터를 오버레이 본인에게 즉시 반영
+            const synced = self
+              ? {
+                  ...m,
+                  nickname: profile.nickname || m.nickname,
+                  character: profile.character,
+                }
+              : m;
+            if (!old) return synced;
             return {
-              ...m,
+              ...synced,
               state: {
-                ...m.state,
+                ...synced.state,
                 progress: old.state.progress,
                 edge: old.state.edge,
                 facing: old.state.facing,
@@ -202,29 +226,22 @@ export function OverlayApp() {
                   ? moveRef.current.walking
                     ? "walk"
                     : "idle"
-                  : m.state.motion,
+                  : synced.state.motion,
               },
             };
           });
         });
       } else {
+        // 방 밖: 항상 본인 하나만
         setMembers((prev) => {
-          if (prev.length === 1 && prev[0].id === "local") {
-            return [
-              {
-                ...prev[0],
-                nickname: profile.nickname,
-                character: profile.character,
-              },
-            ];
-          }
+          const prevLocal = prev.find((m) => m.id === "local");
           return [
             {
               id: "local",
               nickname: profile.nickname,
               character: profile.character,
               state: {
-                ...defaultCharState(0.12),
+                ...(prevLocal?.state ?? defaultCharState(0.12)),
                 motion: moveRef.current.walking ? "walk" : "idle",
               },
               offset: 12,
@@ -615,13 +632,16 @@ export function OverlayApp() {
               member.character.kind === "upload"
                 ? member.character.displaySize
                 : member.character.kind === "buddy"
-                  ? member.character.displaySize
+                  ? Math.max(member.character.displaySize, BUDDY_MIN_DISPLAY_SIZE)
                   : 56
             }
             facing={facing}
             buddyDef={
               member.character.kind === "buddy"
-                ? buddyDefs.find((b) => b.id === member.character.id)
+                ? buddyDefs.find((b) => {
+                    const buddy = member.character;
+                    return buddy.kind === "buddy" && b.id === buddy.id;
+                  })
                 : undefined
             }
           />

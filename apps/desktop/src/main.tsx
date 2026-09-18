@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { App } from "./App";
 import { OverlayApp } from "./overlay/OverlayApp";
+import "./index.css";
 import "./styles.css";
 
 const params = new URLSearchParams(window.location.search);

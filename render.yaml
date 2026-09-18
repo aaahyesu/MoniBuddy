@@ -1,0 +1,19 @@
+# Render Blueprint — MoniBuddy 방 서버
+# Dashboard에서 Blueprint로 이 파일을 연결하거나, 수동 Web Service와 동일 설정으로 배포하세요.
+# 예상 URL: https://monibuddy-server.onrender.com
+
+services:
+  - type: web
+    name: monibuddy-server
+    runtime: node
+    plan: free
+    region: singapore
+    rootDir: .
+    buildCommand: npm install && npm run build:shared && npm run build -w @monibuddy/server
+    startCommand: npm run start -w @monibuddy/server
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: NODE_ENV
+        value: production

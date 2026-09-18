@@ -12,7 +12,6 @@ import {
   CharStatePayload,
   ChatMessage,
   ChatSendPayload,
-  DEFAULT_SERVER_URL,
   GIF_MAX_BYTES,
   MAX_CHAT_LENGTH,
   MAX_ROOM_MEMBERS,
@@ -69,7 +68,7 @@ const upload = multer({
 });
 
 app.get("/health", (_req, res) => {
-  res.json({ ok: true, url: DEFAULT_SERVER_URL });
+  res.json({ ok: true, service: "monibuddy-server" });
 });
 
 app.post("/assets", upload.single("file"), (req, res) => {
@@ -89,7 +88,11 @@ app.post("/assets", upload.single("file"), (req, res) => {
 
   const imageId = path.parse(req.file.filename).name;
   const displaySize = Number(req.body.displaySize ?? 64);
-  const size = ([32, 64, 128].includes(displaySize) ? displaySize : 64) as 32 | 64 | 128;
+  const size = ([32, 64, 80, 128].includes(displaySize) ? displaySize : 64) as
+    | 32
+    | 64
+    | 80
+    | 128;
 
   res.json({
     ok: true,
@@ -267,6 +270,6 @@ io.on("connection", (socket) => {
   });
 });
 
-server.listen(PORT, () => {
-  console.log(`[MoniBuddy] server on http://127.0.0.1:${PORT}`);
+server.listen(PORT, "0.0.0.0", () => {
+  console.log(`[MoniBuddy] server listening on 0.0.0.0:${PORT}`);
 });

@@ -176,8 +176,9 @@ exe는 클라이언트이고, **방 서버는 별도**입니다.
 간단 테스트용으로는 [Render](https://render.com) 무료 Web Service에 `apps/server`를 올리는 방식을 권장합니다.
 
 1. 이 저장소를 GitHub에 push
-2. Render에서 repo 연결 → Web Service 생성
-3. 빌드/시작 예시 (모노레포 기준, 환경에 맞게 조정):
+2. Render → **New → Blueprint** 로 repo 연결 (`render.yaml` 사용)  
+   또는 Web Service를 수동 생성
+3. 빌드/시작 (Blueprint에 이미 포함):
 
 ```bash
 # Build
@@ -188,10 +189,16 @@ npm run start -w @monibuddy/server
 ```
 
 4. 환경변수 `PORT`는 Render가 주입하는 값을 사용
-5. 발급된 URL을 클라이언트 `serverUrl`로 설정
+5. 서비스 URL 예: `https://monibuddy-server.onrender.com`  
+   - GitHub repo **Variable** `MONIBUDDY_SERVER_URL`에 넣으면 설치본 빌드에 반영됩니다
+6. Deploy Hook URL을 GitHub Secret `RENDER_DEPLOY_HOOK`에 넣으면 `main` push 시 자동 재배포
 
 > Render 무료 플랜은 약 15분 동안 트래픽이 없으면 슬립할 수 있습니다.  
 > 다시 접속하면 첫 연결만 조금 느릴 수 있습니다.
+
+### Windows 설치본 자동 릴리즈
+
+`main`에 push 하면 GitHub Actions가 `.exe` 설치본을 빌드해 [Releases](https://github.com/aaahyesu/MoniBuddy/releases)에 올립니다.
 
 ---
 
@@ -234,4 +241,5 @@ _(추후 추가)_
 | 항목 | URL |
 |------|-----|
 | GitHub | https://github.com/aaahyesu/MoniBuddy |
-| 서버 (Render 등) | _(추후 추가)_ |
+| 서버 (Render) | https://monibuddy-server.onrender.com |
+| Releases (exe) | https://github.com/aaahyesu/MoniBuddy/releases |

@@ -1,0 +1,77 @@
+@import "tailwindcss";
+@import "galmuri/dist/galmuri.css";
+
+@theme {
+  --font-pixel: "Galmuri11", "Galmuri14", "Malgun Gothic", monospace;
+  --font-sans: "Galmuri11", "Galmuri14", "Malgun Gothic", monospace;
+  --color-ink: #ffffff;
+  --color-mute: #a0a0a0;
+  --color-line: #ffffff;
+  --color-buddy: #e8eaf0;
+  --color-danger: #ff5555;
+  --color-warn: #ffcc00;
+  --color-ok: #55ff88;
+  --color-accent-cyan: #55ddff;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    margin: 0;
+    min-height: 100%;
+  }
+
+  body.settings-body {
+    font-family: var(--font-pixel);
+    color: var(--color-ink);
+    image-rendering: pixelated;
+    background-color: #000;
+    background-image:
+      radial-gradient(1px 1px at 8% 12%, #fff 0, transparent 100%),
+      radial-gradient(1px 1px at 22% 38%, rgba(255, 255, 255, 0.7) 0, transparent 100%),
+      radial-gradient(1.5px 1.5px at 41% 18%, #fff 0, transparent 100%),
+      radial-gradient(1px 1px at 58% 72%, rgba(255, 255, 255, 0.55) 0, transparent 100%),
+      radial-gradient(1px 1px at 73% 28%, #fff 0, transparent 100%),
+      radial-gradient(1.5px 1.5px at 87% 54%, rgba(255, 255, 255, 0.8) 0, transparent 100%),
+      radial-gradient(1px 1px at 14% 81%, rgba(255, 255, 255, 0.45) 0, transparent 100%),
+      radial-gradient(1px 1px at 33% 63%, #fff 0, transparent 100%),
+      radial-gradient(1px 1px at 49% 9%, rgba(255, 255, 255, 0.65) 0, transparent 100%),
+      radial-gradient(1.5px 1.5px at 66% 44%, #fff 0, transparent 100%),
+      radial-gradient(1px 1px at 91% 88%, rgba(255, 255, 255, 0.5) 0, transparent 100%),
+      radial-gradient(1px 1px at 5% 51%, #fff 0, transparent 100%),
+      radial-gradient(1px 1px at 78% 7%, rgba(255, 255, 255, 0.6) 0, transparent 100%),
+      radial-gradient(1px 1px at 95% 33%, #fff 0, transparent 100%),
+      radial-gradient(1px 1px at 27% 91%, rgba(255, 255, 255, 0.4) 0, transparent 100%);
+    background-size: 100% 100%;
+    background-repeat: no-repeat;
+  }
+
+  body.overlay-body {
+    background: transparent !important;
+    overflow: hidden;
+    user-select: none;
+  }
+}
+
+/* Title drip / glitch like ADRIFT */
+.pixel-title {
+  position: relative;
+  display: inline-block;
+  font-size: clamp(1.4rem, 4vw, 1.85rem);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #fff;
+  text-shadow:
+    0 3px 0 rgba(255, 255, 255, 0.35),
+    0 6px 0 rgba(255, 255, 255, 0.18),
+    0 9px 0 rgba(255, 255, 255, 0.08);
+}
+
+.pixel-divider {
+  height: 1px;
+  width: 100%;
+  background: #fff;
+  opacity: 0.85;
+}
