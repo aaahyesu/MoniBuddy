@@ -638,7 +638,10 @@ export function OverlayApp() {
             facing={facing}
             buddyDef={
               member.character.kind === "buddy"
-                ? buddyDefs.find((b) => b.id === member.character.id)
+                ? buddyDefs.find((b) => {
+                    const buddy = member.character;
+                    return buddy.kind === "buddy" && b.id === buddy.id;
+                  })
                 : undefined
             }
           />
