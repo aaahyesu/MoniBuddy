@@ -1,6 +1,6 @@
 [package]
 name = "monibuddy"
-version = "0.1.6"
+version = "0.1.7"
 description = "MoniBuddy — monitor-edge character buddies with invite chat"
 authors = ["MoniBuddy"]
 edition = "2021"

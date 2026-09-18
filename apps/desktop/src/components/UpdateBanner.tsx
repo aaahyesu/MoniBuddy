@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { getVersion } from "@tauri-apps/api/app";
 import {
   canUseUpdater,
   checkForUpdate,
@@ -6,22 +7,23 @@ import {
   type UpdateStatus,
 } from "../lib/updater";
 
-function statusText(status: UpdateStatus): string {
+function statusText(status: UpdateStatus, currentVersion: string): string {
+  const cur = currentVersion ? ` (현재 v${currentVersion})` : "";
   switch (status.kind) {
     case "checking":
-      return "업데이트 확인 중…";
+      return `업데이트 확인 중…${cur}`;
     case "available":
-      return `새 버전 v${status.version}`;
+      return `새 버전 v${status.version}${cur}`;
     case "downloading":
       return `v${status.version} 받는 중…`;
     case "installing":
       return "설치 후 재시작…";
     case "upToDate":
-      return "최신 버전입니다";
+      return `최신 버전입니다${cur}`;
     case "error":
-      return `확인 실패: ${status.message}`;
+      return `확인 실패: ${status.message}${cur}`;
     default:
-      return "업데이트";
+      return `업데이트${cur}`;
   }
 }
 
@@ -29,9 +31,13 @@ function statusText(status: UpdateStatus): string {
 export function UpdateBanner() {
   const [status, setStatus] = useState<UpdateStatus>({ kind: "idle" });
   const [busy, setBusy] = useState(false);
+  const [currentVersion, setCurrentVersion] = useState("");
 
   useEffect(() => {
     if (!canUseUpdater()) return;
+    void getVersion()
+      .then(setCurrentVersion)
+      .catch(() => setCurrentVersion(""));
     void checkForUpdate(setStatus);
   }, []);
 
@@ -52,7 +58,7 @@ export function UpdateBanner() {
               : "text-mute"
         }`}
       >
-        {statusText(status)}
+        {statusText(status, currentVersion)}
       </p>
       {available ? (
         <button
