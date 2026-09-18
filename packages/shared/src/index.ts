@@ -27,14 +27,14 @@ export type UploadCharacter = {
   kind: "upload";
   imageId: string;
   mime: "image/png" | "image/gif";
-  displaySize: 32 | 64 | 128;
+  displaySize: 32 | 64 | 80 | 128;
 };
 
 /** Bundled default GIF from apps/desktop/public/buddies/ */
 export type BuddyCharacter = {
   kind: "buddy";
   id: string;
-  displaySize: 32 | 64 | 128;
+  displaySize: 32 | 64 | 80 | 128;
   /** 0=baby, 1=teen, 2=adult */
   stage: 0 | 1 | 2;
   /** Visual size multiplier (synced to peers) */
@@ -42,6 +42,9 @@ export type BuddyCharacter = {
 };
 
 export type Character = PartsCharacter | UploadCharacter | BuddyCharacter;
+
+/** 오버레이 버디 최소 표시 크기 */
+export const BUDDY_MIN_DISPLAY_SIZE = 80 as const;
 
 export type GrowthStage = 0 | 1 | 2;
 

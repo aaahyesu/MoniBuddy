@@ -5,6 +5,7 @@ import { InRoomView } from "./components/InRoomView";
 import { OnboardingFlow } from "./components/OnboardingFlow";
 import { RoomLobby } from "./components/RoomLobby";
 import { SimpleBuddyPicker } from "./components/SimpleBuddyPicker";
+import { Brand, Btn, Field, ShellCard, inputClass } from "./components/ui";
 import { useLocalProfile } from "./hooks/useLocalProfile";
 import { useProgress } from "./hooks/useProgress";
 import { useRoomSocket } from "./hooks/useRoomSocket";
@@ -210,7 +211,11 @@ export function App() {
   }, [room.roomCode, room.sendChat, activeBuddyId, progress]);
 
   if (!ready || screen === null) {
-    return <div className="wizard"><div className="wizard-card">불러오는 중…</div></div>;
+    return (
+      <ShellCard>
+        <p className="m-0 text-mute">불러오는 중…</p>
+      </ShellCard>
+    );
   }
 
   if (screen === "onboarding") {
@@ -234,40 +239,32 @@ export function App() {
 
   if (screen === "profile") {
     return (
-      <div className="wizard">
-        <div className="wizard-card">
-          <div className="brand" style={{ fontSize: "1.25rem" }}>
-            {APP_NAME}
-          </div>
-          <h2>프로필</h2>
-          <label>
-            닉네임
-            <input
-              value={profile.nickname}
-              maxLength={16}
-              onChange={(e) => setNickname(e.target.value)}
-            />
-          </label>
-          <p className="muted" style={{ marginBottom: 0 }}>
-            캐릭터
-          </p>
-          <SimpleBuddyPicker
-            character={profile.character}
-            serverUrl={profile.serverUrl}
-            onChange={setCharacter}
-            isUnlocked={progress.isUnlocked}
-            getXp={progress.getXp}
+      <ShellCard>
+        <Brand title={APP_NAME} subtitle="프로필" />
+        <Field label="닉네임">
+          <input
+            className={inputClass}
+            value={profile.nickname}
+            maxLength={16}
+            onChange={(e) => setNickname(e.target.value)}
           />
-          <button
-            type="button"
-            className="primary big"
-            style={{ width: "100%" }}
-            onClick={() => setScreen(room.roomCode ? "room" : "lobby")}
-          >
-            확인
-          </button>
-        </div>
-      </div>
+        </Field>
+        <p className="mb-0 text-[0.9rem] text-mute">캐릭터</p>
+        <SimpleBuddyPicker
+          character={profile.character}
+          serverUrl={profile.serverUrl}
+          onChange={setCharacter}
+          isUnlocked={progress.isUnlocked}
+          getXp={progress.getXp}
+        />
+        <Btn
+          variant="primary"
+          size="lg"
+          onClick={() => setScreen(room.roomCode ? "room" : "lobby")}
+        >
+          확인
+        </Btn>
+      </ShellCard>
     );
   }
 
@@ -321,22 +318,27 @@ export function App() {
             : undefined
         }
       />
-      <div className="quiet-bar">
+      <div className="fixed bottom-3 right-3 flex gap-2 opacity-75">
         {!isTauri() && (
-          <a className="muted" href="?mode=overlay" target="_blank" rel="noreferrer">
+          <a
+            className="rounded-full px-3 py-1.5 text-[0.78rem] text-mute hover:text-ink"
+            href="?mode=overlay"
+            target="_blank"
+            rel="noreferrer"
+          >
             오버레이
           </a>
         )}
-        <button
-          type="button"
-          className="ghost"
+        <Btn
+          variant="ghost"
+          className="px-3 py-1.5 text-[0.78rem]"
           onClick={() => {
             resetOnboarding();
             setScreen("onboarding");
           }}
         >
           처음부터
-        </button>
+        </Btn>
       </div>
     </>
   );

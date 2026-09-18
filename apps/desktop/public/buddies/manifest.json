@@ -2,8 +2,9 @@
   "buddies": [
     {
       "id": "ank_dance",
-      "label": "안경만두_골반춤",
-      "displaySize": 64,
+      "label": "골반춤",
+      "group": "ank",
+      "displaySize": 80,
       "free": true,
       "grows": true,
       "ext": "gif",
@@ -14,12 +15,27 @@
       ]
     },
     {
-      "id": "ank_listening",
-      "label": "안경만두_노래듣기",
-      "displaySize": 64,
+      "id": "ank_headset",
+      "label": "헤드셋만두",
+      "group": "ank",
+      "displaySize": 80,
       "free": true,
       "grows": true,
-      "ext": "jpg",
+      "ext": "gif",
+      "stages": [
+        { "stage": 0, "scale": 0.55, "file": "ank_headset", "label": "애기" },
+        { "stage": 1, "scale": 0.78, "file": "ank_headset", "label": "성장" },
+        { "stage": 2, "scale": 1.0, "file": "ank_headset", "label": "성체" }
+      ]
+    },
+    {
+      "id": "ank_listening",
+      "label": "노래듣기",
+      "group": "ank",
+      "displaySize": 80,
+      "free": true,
+      "grows": true,
+      "ext": "png",
       "stages": [
         { "stage": 0, "scale": 0.55, "file": "ank_listening", "label": "애기" },
         { "stage": 1, "scale": 0.78, "file": "ank_listening", "label": "성장" },
@@ -28,8 +44,9 @@
     },
     {
       "id": "ank_sleep",
-      "label": "안경만두_쿨쿨",
-      "displaySize": 64,
+      "label": "쿨쿨",
+      "group": "ank",
+      "displaySize": 80,
       "free": true,
       "grows": true,
       "ext": "gif",
@@ -40,27 +57,203 @@
       ]
     },
     {
-      "id": "reward_spark",
-      "label": "스파크 (보상·파일 예정)",
-      "displaySize": 64,
-      "free": false,
-      "unlock": "quest:first_room",
-      "fileReady": false,
+      "id": "ank_angel",
+      "label": "천사",
+      "group": "ank",
+      "displaySize": 80,
+      "free": true,
       "grows": true,
+      "ext": "png",
       "stages": [
-        { "stage": 0, "scale": 0.55, "file": "reward_spark" },
-        { "stage": 1, "scale": 0.78, "file": "reward_spark" },
-        { "stage": 2, "scale": 1.0, "file": "reward_spark" }
+        { "stage": 0, "scale": 0.55, "file": "ank_angel", "label": "애기" },
+        { "stage": 1, "scale": 0.78, "file": "ank_angel", "label": "성장" },
+        { "stage": 2, "scale": 1.0, "file": "ank_angel", "label": "성체" }
       ]
     },
     {
-      "id": "reward_walker",
-      "label": "워커 (보상·파일 예정)",
-      "displaySize": 64,
+      "id": "ank_sick",
+      "label": "아픔",
+      "group": "ank",
+      "displaySize": 80,
+      "free": true,
+      "grows": true,
+      "ext": "png",
+      "stages": [
+        { "stage": 0, "scale": 0.55, "file": "ank_sick", "label": "애기" },
+        { "stage": 1, "scale": 0.78, "file": "ank_sick", "label": "성장" },
+        { "stage": 2, "scale": 1.0, "file": "ank_sick", "label": "성체" }
+      ]
+    },
+    {
+      "id": "ank_surprised",
+      "label": "놀람",
+      "group": "ank",
+      "displaySize": 80,
+      "free": true,
+      "grows": true,
+      "ext": "png",
+      "stages": [
+        { "stage": 0, "scale": 0.55, "file": "ank_surprised", "label": "애기" },
+        { "stage": 1, "scale": 0.78, "file": "ank_surprised", "label": "성장" },
+        { "stage": 2, "scale": 1.0, "file": "ank_surprised", "label": "성체" }
+      ]
+    },
+    {
+      "id": "ank_withFriend",
+      "label": "친구랑",
+      "group": "ank",
+      "displaySize": 80,
+      "free": true,
+      "grows": true,
+      "ext": "png",
+      "stages": [
+        { "stage": 0, "scale": 0.55, "file": "ank_withFriend", "label": "애기" },
+        { "stage": 1, "scale": 0.78, "file": "ank_withFriend", "label": "성장" },
+        { "stage": 2, "scale": 1.0, "file": "ank_withFriend", "label": "성체" }
+      ]
+    },
+    {
+      "id": "gnd_dance",
+      "label": "댄스",
+      "group": "gnd",
+      "displaySize": 80,
+      "free": true,
+      "grows": true,
+      "ext": "png",
+      "stages": [
+        { "stage": 0, "scale": 0.55, "file": "gnd_dance", "label": "애기" },
+        { "stage": 1, "scale": 0.78, "file": "gnd_dance", "label": "성장" },
+        { "stage": 2, "scale": 1.0, "file": "gnd_dance", "label": "성체" }
+      ]
+    },
+    {
+      "id": "gnd_angry",
+      "label": "화남",
+      "group": "gnd",
+      "displaySize": 80,
+      "free": true,
+      "grows": true,
+      "ext": "png",
+      "stages": [
+        { "stage": 0, "scale": 0.55, "file": "gnd_angry", "label": "애기" },
+        { "stage": 1, "scale": 0.78, "file": "gnd_angry", "label": "성장" },
+        { "stage": 2, "scale": 1.0, "file": "gnd_angry", "label": "성체" }
+      ]
+    },
+    {
+      "id": "gnd_cheese",
+      "label": "치즈",
+      "group": "gnd",
+      "displaySize": 80,
+      "free": true,
+      "grows": true,
+      "ext": "png",
+      "stages": [
+        { "stage": 0, "scale": 0.55, "file": "gnd_cheese", "label": "애기" },
+        { "stage": 1, "scale": 0.78, "file": "gnd_cheese", "label": "성장" },
+        { "stage": 2, "scale": 1.0, "file": "gnd_cheese", "label": "성체" }
+      ]
+    },
+    {
+      "id": "gnd_embrarrassing",
+      "label": "당황",
+      "group": "gnd",
+      "displaySize": 80,
+      "free": true,
+      "grows": true,
+      "ext": "png",
+      "stages": [
+        { "stage": 0, "scale": 0.55, "file": "gnd_embrarrassing", "label": "애기" },
+        { "stage": 1, "scale": 0.78, "file": "gnd_embrarrassing", "label": "성장" },
+        { "stage": 2, "scale": 1.0, "file": "gnd_embrarrassing", "label": "성체" }
+      ]
+    },
+    {
+      "id": "gnd_glasses",
+      "label": "안경",
+      "group": "gnd",
+      "displaySize": 80,
+      "free": true,
+      "grows": true,
+      "ext": "png",
+      "stages": [
+        { "stage": 0, "scale": 0.55, "file": "gnd_glasses", "label": "애기" },
+        { "stage": 1, "scale": 0.78, "file": "gnd_glasses", "label": "성장" },
+        { "stage": 2, "scale": 1.0, "file": "gnd_glasses", "label": "성체" }
+      ]
+    },
+    {
+      "id": "gnd_sad",
+      "label": "슬픔",
+      "group": "gnd",
+      "displaySize": 80,
+      "free": true,
+      "grows": true,
+      "ext": "png",
+      "stages": [
+        { "stage": 0, "scale": 0.55, "file": "gnd_sad", "label": "애기" },
+        { "stage": 1, "scale": 0.78, "file": "gnd_sad", "label": "성장" },
+        { "stage": 2, "scale": 1.0, "file": "gnd_sad", "label": "성체" }
+      ]
+    },
+    {
+      "id": "gnd_tired",
+      "label": "피곤",
+      "group": "gnd",
+      "displaySize": 80,
+      "free": true,
+      "grows": true,
+      "ext": "png",
+      "stages": [
+        { "stage": 0, "scale": 0.55, "file": "gnd_tired", "label": "애기" },
+        { "stage": 1, "scale": 0.78, "file": "gnd_tired", "label": "성장" },
+        { "stage": 2, "scale": 1.0, "file": "gnd_tired", "label": "성체" }
+      ]
+    },
+    {
+      "id": "reward_aha",
+      "label": "아하",
+      "group": "ank",
+      "displaySize": 80,
+      "free": false,
+      "unlock": "quest:first_room",
+      "grows": true,
+      "ext": "png",
+      "stages": [
+        { "stage": 0, "scale": 0.55, "file": "reward_aha", "label": "애기" },
+        { "stage": 1, "scale": 0.78, "file": "reward_aha", "label": "성장" },
+        { "stage": 2, "scale": 1.0, "file": "reward_aha", "label": "성체" }
+      ]
+    },
+    {
+      "id": "reward_thumbup",
+      "label": "따봉",
+      "group": "gnd",
+      "displaySize": 80,
       "free": false,
       "unlock": "quest:chat_10",
-      "fileReady": false,
-      "grows": false
+      "grows": true,
+      "ext": "png",
+      "stages": [
+        { "stage": 0, "scale": 0.55, "file": "reward_thumbup", "label": "애기" },
+        { "stage": 1, "scale": 0.78, "file": "reward_thumbup", "label": "성장" },
+        { "stage": 2, "scale": 1.0, "file": "reward_thumbup", "label": "성체" }
+      ]
+    },
+    {
+      "id": "reward_annoyed",
+      "label": "짜증",
+      "group": "ank",
+      "displaySize": 80,
+      "free": false,
+      "unlock": "quest:grow_once",
+      "grows": true,
+      "ext": "png",
+      "stages": [
+        { "stage": 0, "scale": 0.55, "file": "reward_annoyed", "label": "애기" },
+        { "stage": 1, "scale": 0.78, "file": "reward_annoyed", "label": "성장" },
+        { "stage": 2, "scale": 1.0, "file": "reward_annoyed", "label": "성체" }
+      ]
     }
   ]
 }

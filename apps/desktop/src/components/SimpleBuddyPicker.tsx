@@ -1,12 +1,17 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Character } from "@monibuddy/shared";
 import {
+  BUDDY_GROUPS,
   buddyAssetUrl,
+  buddyGroupOf,
+  clearBuddyManifestCache,
   loadBuddyManifest,
   toBuddyCharacter,
+  type BuddyGroup,
   type BuddyDef,
 } from "../lib/defaultBuddies";
 import { CharacterView } from "./CharacterView";
+import { cn } from "../lib/cn";
 
 type Props = {
   character: Character;
@@ -14,7 +19,6 @@ type Props = {
   onChange: (c: Character) => void;
   isUnlocked: (id: string) => boolean;
   getXp: (id: string) => number;
-  /** show only free/unlocked pickable cards (locked as dim) */
   showLocked?: boolean;
 };
 
@@ -28,12 +32,19 @@ export function SimpleBuddyPicker({
 }: Props) {
   const [buddies, setBuddies] = useState<BuddyDef[]>([]);
   const [hint, setHint] = useState<string | null>(null);
+  const [group, setGroup] = useState<BuddyGroup>("ank");
 
   useEffect(() => {
+    clearBuddyManifestCache();
     void loadBuddyManifest().then((m) => setBuddies(m.buddies));
   }, []);
 
-  // first paint: if still on default parts, pick first free buddy
+  useEffect(() => {
+    if (character.kind !== "buddy" || buddies.length === 0) return;
+    const current = buddies.find((b) => b.id === character.id);
+    if (current) setGroup(buddyGroupOf(current));
+  }, [character, buddies]);
+
   useEffect(() => {
     if (character.kind === "buddy" || buddies.length === 0) return;
     const free = buddies.find((b) => b.free && b.fileReady !== false);
@@ -42,41 +53,70 @@ export function SimpleBuddyPicker({
     }
   }, [buddies]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const visible = showLocked ? buddies : buddies.filter((b) => isUnlocked(b.id));
+  const visible = useMemo(() => {
+    const base = showLocked ? buddies : buddies.filter((b) => isUnlocked(b.id));
+    return base.filter((b) => buddyGroupOf(b) === group);
+  }, [buddies, group, showLocked, isUnlocked]);
+
+  const selectedDef =
+    character.kind === "buddy"
+      ? buddies.find((b) => b.id === character.id)
+      : undefined;
+  const selectedLabel = selectedDef?.label ?? (character.kind === "buddy" ? character.id : "캐릭터를 골라 주세요");
 
   return (
-    <div className="simple-picker">
-      <div className="simple-preview">
+    <div className="grid gap-3.5">
+      <div className="grid justify-items-center gap-2 border border-black/15 bg-buddy px-2 py-3.5">
         <CharacterView
           character={character}
           serverUrl={serverUrl}
           size={112}
-          buddyDef={
-            character.kind === "buddy"
-              ? buddies.find((b) => b.id === character.id)
-              : undefined
-          }
+          buddyDef={selectedDef}
         />
-        <div className="muted" style={{ textAlign: "center", marginTop: "0.5rem" }}>
-          {character.kind === "buddy"
-            ? buddies.find((b) => b.id === character.id)?.label ?? character.id
-            : "캐릭터를 골라 주세요"}
-        </div>
+        <div className="text-center text-[0.78rem] text-[#4a5060]">{selectedLabel}</div>
       </div>
 
-      <div className="simple-grid">
+      <div className="grid grid-cols-2 gap-2">
+        {BUDDY_GROUPS.map((g) => (
+          <button
+            key={g.id}
+            type="button"
+            onClick={() => setGroup(g.id)}
+            className={cn(
+              "border px-3 py-2 text-[0.72rem] uppercase tracking-wider transition",
+              group === g.id
+                ? "border-white bg-white font-bold text-black"
+                : "border-white/40 bg-transparent text-mute hover:border-white hover:text-white",
+            )}
+          >
+            {g.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(96px,1fr))] gap-2">
         {visible.map((b) => {
           const unlocked = isUnlocked(b.id);
-          const selected = character.kind === "buddy" && character.id === b.id;
           const ready = b.fileReady !== false;
+          // 파일 미정이면 퀘스트 해금 여부와 관계없이 잠금 표시
+          const available = unlocked && ready;
+          const selected = character.kind === "buddy" && character.id === b.id;
           return (
             <button
               key={b.id}
               type="button"
-              className={`simple-card${selected ? " selected" : ""}${
-                unlocked ? "" : " locked"
-              }`}
+              className={cn(
+                "grid min-h-[110px] justify-items-center gap-1.5 border bg-buddy px-1.5 py-2.5 transition",
+                selected
+                  ? "border-black ring-2 ring-black/40"
+                  : "border-black/15 hover:border-black/35",
+                !available && "opacity-50",
+              )}
               onClick={() => {
+                if (!ready) {
+                  setHint("아직 준비 중이에요");
+                  return;
+                }
                 if (!unlocked) {
                   setHint(
                     b.unlock === "quest:first_room"
@@ -87,25 +127,32 @@ export function SimpleBuddyPicker({
                   );
                   return;
                 }
-                if (!ready) {
-                  setHint("해금됐어요! GIF 파일은 곧 추가될 예정이에요.");
-                } else {
-                  setHint(null);
-                }
+                setHint(null);
                 onChange(toBuddyCharacter(b, getXp(b.id)));
               }}
             >
-              {ready && unlocked ? (
-                <img src={buddyAssetUrl(b, b.id)} alt="" />
+              {available ? (
+                <img
+                  src={buddyAssetUrl(b, b.stages?.[0]?.file ?? b.id)}
+                  alt=""
+                  className="h-14 w-14 object-contain"
+                />
               ) : (
-                <span className="simple-q">{unlocked ? "…" : "🔒"}</span>
+                <span className="grid h-14 w-14 place-items-center bg-[#e4e7ee] text-lg">
+                  🔒
+                </span>
               )}
-              <span>{unlocked ? b.label ?? b.id : "잠김"}</span>
+              <span className="text-center text-[0.75rem] leading-snug text-[#5c6370]">
+                {available ? b.label ?? b.id : "잠김"}
+              </span>
             </button>
           );
         })}
       </div>
-      {hint && <p className="muted" style={{ margin: 0 }}>{hint}</p>}
+      {visible.length === 0 && (
+        <p className="m-0 text-center text-[0.78rem] text-mute">이 그룹에 캐릭터가 없어요</p>
+      )}
+      {hint && <p className="m-0 text-[0.85rem] text-mute">{hint}</p>}
     </div>
   );
 }

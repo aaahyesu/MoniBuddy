@@ -14,6 +14,7 @@ import { CharacterView } from "./CharacterView";
 import { partLabel } from "../lib/parts";
 import {
   applyGrowthToBuddy,
+  buddyAssetUrl,
   loadBuddyManifest,
   toBuddyCharacter,
   type BuddyDef,
@@ -93,15 +94,15 @@ export function CharacterEditor({
   }
 
   function selectBuddy(def: BuddyDef) {
+    if (def.fileReady === false) {
+      setError("아직 준비 중이에요");
+      return;
+    }
     if (!isUnlocked(def.id)) {
       setError(def.unlock ? `해금 조건: ${def.unlock}` : "아직 해금되지 않았습니다.");
       return;
     }
-    if (def.fileReady === false) {
-      setError("보상은 해금됐지만 GIF 파일이 아직 없습니다. 나중에 추가하면 표시됩니다.");
-    } else {
-      setError(null);
-    }
+    setError(null);
     const xp = getXp(def.id);
     onChange(toBuddyCharacter(def, xp));
     setMode("buddy");
@@ -157,7 +158,7 @@ export function CharacterEditor({
         error?: string;
         imageId?: string;
         mime?: "image/png" | "image/gif";
-        displaySize?: 32 | 64 | 128;
+        displaySize?: 32 | 64 | 80 | 128;
       };
       if (!json.ok || !json.imageId || !json.mime) {
         setError(json.error ?? "업로드 실패");
@@ -271,51 +272,40 @@ export function CharacterEditor({
         {mode === "buddy" && (
           <>
             <p className="muted" style={{ margin: 0 }}>
-              잠긴 항목은 퀘스트로 해금 · 파일 예정인 보상은 해금 후 GIF만 추가하면 됩니다.
+              잠긴 항목은 퀘스트로 해금됩니다. 파일이 없는 보상은 잠김으로 표시됩니다.
             </p>
             <div className="row">
               {manifest.buddies.map((b) => {
                 const unlocked = isUnlocked(b.id);
-                const selected = character.kind === "buddy" && character.id === b.id;
                 const ready = b.fileReady !== false;
+                const available = unlocked && ready;
+                const selected = character.kind === "buddy" && character.id === b.id;
                 return (
                   <button
                     key={b.id}
                     type="button"
                     className={`buddy-pick${selected ? " primary" : " ghost"}${
-                      unlocked ? "" : " locked"
+                      available ? "" : " locked"
                     }`}
                     onClick={() => selectBuddy(b)}
-                    title={
-                      unlocked
-                        ? b.label ?? b.id
-                        : `잠김 (${b.unlock ?? "조건 없음"})`
-                    }
+                    title={available ? b.label ?? b.id : "잠김"}
                   >
-                    {ready ? (
+                    {available ? (
                       <img
-                        src={`/buddies/${encodeURIComponent(b.id)}.gif`}
+                        src={buddyAssetUrl(b, b.stages?.[0]?.file ?? b.id)}
                         alt={b.id}
                         width={48}
                         height={48}
                         style={{
-                          imageRendering: "pixelated",
+                          imageRendering: "auto",
                           display: "block",
-                          opacity: unlocked ? 1 : 0.35,
-                        }}
-                        onError={(e) => {
-                          e.currentTarget.style.display = "none";
-                          const sib = e.currentTarget.nextElementSibling as HTMLElement | null;
-                          if (sib) sib.hidden = false;
                         }}
                       />
-                    ) : null}
-                    <span hidden={ready} className="buddy-placeholder">
-                      ?
-                    </span>
+                    ) : (
+                      <span className="buddy-placeholder">🔒</span>
+                    )}
                     <span className="buddy-cap">
-                      {unlocked ? b.label ?? b.id : "🔒"}
-                      {!ready && unlocked ? " (파일예정)" : ""}
+                      {available ? b.label ?? b.id : "잠김"}
                     </span>
                   </button>
                 );
@@ -348,9 +338,10 @@ export function CharacterEditor({
   );
 }
 
-function pickDisplaySize(edge: number): 32 | 64 | 128 {
+function pickDisplaySize(edge: number): 32 | 64 | 80 | 128 {
   if (edge <= 32) return 32;
   if (edge <= 64) return 64;
+  if (edge <= 96) return 80;
   return 128;
 }
 

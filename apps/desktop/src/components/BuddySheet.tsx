@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useState, type ButtonHTMLAttributes, type ReactNode } from "react";
 import type { Character } from "@monibuddy/shared";
 import { SimpleBuddyPicker } from "./SimpleBuddyPicker";
 import { QuestPanel } from "./QuestPanel";
+import { Brand, Btn, ShellCard } from "./ui";
+import { cn } from "../lib/cn";
 
 type QuestRow = {
   id: string;
@@ -43,53 +45,63 @@ export function BuddySheet({
   const [tab, setTab] = useState<"character" | "quests">(initialTab);
 
   return (
-    <div className="wizard dark">
-      <div className="wizard-card glass-dark">
-        <div className="brand" style={{ fontSize: "1.25rem" }}>
-          {title}
-        </div>
-        <div className="sheet-tabs">
-          <button
-            type="button"
-            className={tab === "character" ? "glass-tab on" : "glass-tab"}
-            onClick={() => setTab("character")}
-          >
-            캐릭터 바꾸기
-          </button>
-          <button
-            type="button"
-            className={tab === "quests" ? "glass-tab on" : "glass-tab"}
-            onClick={() => setTab("quests")}
-          >
-            퀘스트
-          </button>
-        </div>
-
-        {tab === "character" && (
-          <SimpleBuddyPicker
-            character={character}
-            serverUrl={serverUrl}
-            onChange={onChange}
-            isUnlocked={isUnlocked}
-            getXp={getXp}
-          />
-        )}
-
-        {tab === "quests" && (
-          <QuestPanel
-            quests={quests}
-            unlockNotices={unlockNotices}
-            onDismissNotices={onDismissNotices}
-            compact
-          />
-        )}
-
-        <div className="wizard-actions">
-          <button type="button" className="glass-confirm" onClick={onClose}>
-            확인
-          </button>
-        </div>
+    <ShellCard>
+      <Brand title={title} />
+      <div className="grid grid-cols-2 gap-2">
+        <TabBtn active={tab === "character"} onClick={() => setTab("character")}>
+          캐릭터 바꾸기
+        </TabBtn>
+        <TabBtn active={tab === "quests"} onClick={() => setTab("quests")}>
+          퀘스트
+        </TabBtn>
       </div>
-    </div>
+
+      {tab === "character" && (
+        <SimpleBuddyPicker
+          character={character}
+          serverUrl={serverUrl}
+          onChange={onChange}
+          isUnlocked={isUnlocked}
+          getXp={getXp}
+        />
+      )}
+
+      {tab === "quests" && (
+        <QuestPanel
+          quests={quests}
+          unlockNotices={unlockNotices}
+          onDismissNotices={onDismissNotices}
+          compact
+        />
+      )}
+
+      <Btn variant="primary" size="lg" onClick={onClose}>
+        확인
+      </Btn>
+    </ShellCard>
+  );
+}
+
+function TabBtn({
+  active,
+  children,
+  ...props
+}: ButtonHTMLAttributes<HTMLButtonElement> & {
+  active: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      className={cn(
+        "border px-3 py-2 text-[0.72rem] uppercase tracking-wider transition",
+        active
+          ? "border-white bg-white font-bold text-black"
+          : "border-white/40 bg-transparent text-mute hover:border-white hover:text-white",
+      )}
+      {...props}
+    >
+      {children}
+    </button>
   );
 }

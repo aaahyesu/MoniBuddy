@@ -1,0 +1,57 @@
+name: Release desktop
+
+on:
+  push:
+    branches: [main, master]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish-windows:
+    name: Build Windows installer + GitHub Release
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri -> target
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build shared
+        run: npm run build:shared
+
+      - name: Build Tauri installer & publish release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VITE_MONIBUDDY_SERVER_URL: ${{ vars.MONIBUDDY_SERVER_URL }}
+        with:
+          projectPath: apps/desktop
+          tagName: v__VERSION__
+          releaseName: MoniBuddy v__VERSION__
+          releaseBody: |
+            ## MoniBuddy Windows 설치본
+
+            - `MoniBuddy_*_x64-setup.exe` 를 받아 설치하세요.
+            - 기본 서버: https://monibuddy-server.onrender.com (또는 repo Variable `MONIBUDDY_SERVER_URL`)
+            - 로컬 서버를 쓰려면 앱에서 서버 URL을 `http://127.0.0.1:3847` 로 바꾸면 됩니다.
+          releaseDraft: false
+          prerelease: false
+          includeUpdaterJson: false
