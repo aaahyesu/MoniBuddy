@@ -269,20 +269,18 @@ export function App() {
             placeholder="https://monibuddy-server.onrender.com"
           />
         </Field>
-        <label className="flex cursor-pointer items-start gap-3 text-left text-[0.82rem] text-white/90">
+        <label className="flex cursor-pointer items-center gap-2 text-left text-[0.82rem] text-white/90">
           <input
             type="checkbox"
-            className="mt-1 size-4 shrink-0 accent-white"
+            className="size-4 shrink-0 accent-white"
             checked={profile.forcePolling}
             onChange={(e) => setForcePolling(e.target.checked)}
           />
-          <span>
-            회사망 호환 (HTTPS 폴링만)
-            <span className="mt-1 block text-[0.72rem] leading-relaxed text-mute">
-              WebSocket이 막힌 망에서 켜 두세요. Wi‑Fi에서 더 빠르게 쓰려면 끌 수 있어요.
-            </span>
-          </span>
+          <span>회사망 호환 (HTTPS 폴링만)</span>
         </label>
+        <p className="m-0 pl-6 text-[0.72rem] leading-relaxed text-mute">
+          WebSocket이 막힌 망에서 켜 두세요. Wi‑Fi에서 더 빠르게 쓰려면 끌 수 있어요.
+        </p>
         <p className="m-0 text-[0.72rem] leading-relaxed text-mute">
           연결이 안 되면 위 주소가{" "}
           <span className="text-accent-cyan">https://monibuddy-server.onrender.com</span>{" "}
