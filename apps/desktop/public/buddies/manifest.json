@@ -213,7 +213,7 @@
     {
       "id": "reward_aha",
       "label": "아하",
-      "group": "ank",
+      "group": "reward",
       "displaySize": 80,
       "free": false,
       "unlock": "quest:first_room",
@@ -228,7 +228,7 @@
     {
       "id": "reward_thumbup",
       "label": "따봉",
-      "group": "gnd",
+      "group": "reward",
       "displaySize": 80,
       "free": false,
       "unlock": "quest:chat_10",
