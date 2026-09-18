@@ -10,13 +10,20 @@ use tauri::{
 };
 use tauri_plugin_autostart::MacosLauncher;
 
-/// 0=normal, 1=yielding (hidden for capture/toast)
+/// 0=normal, 1=yielding (capture UI / toast 양보 중)
 static YIELD_STATE: AtomicU8 = AtomicU8::new(0);
 /// 사용자가 트레이/설정으로 오버레이를 켠 상태인지
 static OVERLAY_USER_VISIBLE: AtomicBool = AtomicBool::new(true);
 /// 캡처 종료 후에도 토스트가 보이도록 양보를 유지할 시각
 static YIELD_UNTIL: Mutex<Option<Instant>> = Mutex::new(None);
-const TOAST_GRACE: Duration = Duration::from_secs(8);
+/// 이번 양보 세션이 시작된 시각 (하드 상한용)
+static YIELD_STARTED_AT: Mutex<Option<Instant>> = Mutex::new(None);
+/// MAX_YIELD 소진 후, 캡처 UI가 꺼질 때까지 재양보 금지
+static YIELD_EXHAUSTED: AtomicBool = AtomicBool::new(false);
+/// 캡처 직후 토스트용 짧은 유예
+const TOAST_GRACE: Duration = Duration::from_secs(3);
+/// ScreenClippingHost 잔류 등으로 양보가 끝나지 않는 것 방지
+const MAX_YIELD: Duration = Duration::from_secs(10);
 
 #[tauri::command]
 fn set_click_through(app: AppHandle, enabled: bool) -> Result<(), String> {
@@ -136,12 +143,28 @@ fn setup_overlay(app: &AppHandle) -> Result<(), String> {
 
     let _ = overlay.set_always_on_top(true);
     let _ = overlay.set_ignore_cursor_events(true);
+    set_exclude_from_capture(&overlay, true);
     Ok(())
 }
 
 fn extend_capture_yield() {
+    if YIELD_EXHAUSTED.load(Ordering::SeqCst) {
+        return;
+    }
+    let now = Instant::now();
+    let mut started = YIELD_STARTED_AT.lock().unwrap_or_else(|e| e.into_inner());
     let mut until = YIELD_UNTIL.lock().unwrap_or_else(|e| e.into_inner());
-    *until = Some(Instant::now() + TOAST_GRACE);
+
+    let start = started.get_or_insert(now);
+    let hard_end = *start + MAX_YIELD;
+    if now >= hard_end {
+        *until = None;
+        *started = None;
+        YIELD_EXHAUSTED.store(true, Ordering::SeqCst);
+        return;
+    }
+    let soft_end = now + TOAST_GRACE;
+    *until = Some(if soft_end < hard_end { soft_end } else { hard_end });
 }
 
 fn capture_yield_active() -> bool {
@@ -150,11 +173,43 @@ fn capture_yield_active() -> bool {
         Some(t) if Instant::now() < t => true,
         Some(_) => {
             *until = None;
+            let mut started = YIELD_STARTED_AT.lock().unwrap_or_else(|e| e.into_inner());
+            *started = None;
             false
         }
-        None => false,
+        None => {
+            let mut started = YIELD_STARTED_AT.lock().unwrap_or_else(|e| e.into_inner());
+            *started = None;
+            false
+        }
     }
 }
+
+#[cfg(windows)]
+fn set_exclude_from_capture(overlay: &tauri::WebviewWindow, enabled: bool) {
+    #[link(name = "user32")]
+    extern "system" {
+        fn SetWindowDisplayAffinity(hwnd: isize, affinity: u32) -> i32;
+    }
+    // WDA_EXCLUDEFROMCAPTURE = 0x11 (Win10 2004+)
+    const WDA_NONE: u32 = 0;
+    const WDA_EXCLUDEFROMCAPTURE: u32 = 0x11;
+
+    let Ok(hwnd) = overlay.hwnd() else {
+        return;
+    };
+    let affinity = if enabled {
+        WDA_EXCLUDEFROMCAPTURE
+    } else {
+        WDA_NONE
+    };
+    unsafe {
+        SetWindowDisplayAffinity(hwnd.0 as isize, affinity);
+    }
+}
+
+#[cfg(not(windows))]
+fn set_exclude_from_capture(_overlay: &tauri::WebviewWindow, _enabled: bool) {}
 
 fn apply_capture_yield(app: &AppHandle, should_yield: bool) {
     let next = if should_yield { 1 } else { 0 };
@@ -167,11 +222,12 @@ fn apply_capture_yield(app: &AppHandle, should_yield: bool) {
     };
 
     if should_yield {
-        // 전체화면 오버레이는 alwaysOnTop만 꺼도 토스트를 가림 → 잠시 숨김
+        // 숨기지 않음 — 캡처 제외 + alwaysOnTop만 내려 토스트/캡처 UI를 가리지 않음
+        set_exclude_from_capture(&overlay, true);
         let _ = overlay.set_always_on_top(false);
-        let _ = overlay.hide();
     } else if OVERLAY_USER_VISIBLE.load(Ordering::SeqCst) {
         let _ = overlay.show();
+        set_exclude_from_capture(&overlay, true);
         let _ = overlay.set_always_on_top(true);
         let _ = overlay.set_ignore_cursor_events(true);
     }
@@ -190,8 +246,6 @@ mod capture_detect {
         fn GetWindowTextW(hwnd: isize, lp_string: *mut u16, n_max_count: i32) -> i32;
         fn GetClassNameW(hwnd: isize, lp_class_name: *mut u16, n_max_count: i32) -> i32;
         fn GetAsyncKeyState(v_key: i32) -> i16;
-        fn EnumWindows(cb: unsafe extern "system" fn(isize, isize) -> i32, lparam: isize) -> i32;
-        fn IsWindowVisible(hwnd: isize) -> i32;
     }
 
     #[link(name = "kernel32")]
@@ -219,14 +273,10 @@ mod capture_detect {
         "flameshot",
     ];
 
-    const EPHEMERAL_CAPTURE_HOSTS: &[&str] = &["screenclippinghost"];
-
     const CAPTURE_TITLE_HINTS: &[&str] = &[
         "snipping",
         "snip & sketch",
         "screen sketch",
-        "캡처",
-        "자르기",
         "스크린샷",
         "screenshot",
     ];
@@ -291,32 +341,6 @@ mod capture_detect {
         }
     }
 
-    unsafe extern "system" fn enum_capture_host_cb(hwnd: isize, lparam: isize) -> i32 {
-        if IsWindowVisible(hwnd) == 0 {
-            return 1;
-        }
-        let mut pid = 0u32;
-        GetWindowThreadProcessId(hwnd, &mut pid);
-        if let Some(name) = process_name_for_pid(pid) {
-            if EPHEMERAL_CAPTURE_HOSTS.iter().any(|h| name.contains(h)) {
-                let found = lparam as *mut bool;
-                if !found.is_null() {
-                    *found = true;
-                }
-                return 0; // stop
-            }
-        }
-        1
-    }
-
-    fn ephemeral_capture_host_running() -> bool {
-        let mut found = false;
-        unsafe {
-            EnumWindows(enum_capture_host_cb, &mut found as *mut bool as isize);
-        }
-        found
-    }
-
     pub fn capture_hotkey_down() -> bool {
         unsafe {
             let win = GetAsyncKeyState(0x5B) as u16 & 0x8000 != 0
@@ -338,13 +362,9 @@ mod capture_detect {
             }
         }
         let (title, class_name) = foreground_title_and_class();
-        if CAPTURE_TITLE_HINTS
+        CAPTURE_TITLE_HINTS
             .iter()
             .any(|h| title.contains(h) || class_name.contains(h))
-        {
-            return true;
-        }
-        ephemeral_capture_host_running()
     }
 }
 
@@ -359,14 +379,20 @@ fn spawn_capture_yield_watcher(app: AppHandle) {
     thread::spawn(move || {
         let mut was_active = false;
         loop {
-            let active = std::panic::catch_unwind(capture_detect::capture_ui_active).unwrap_or(false);
+            let active =
+                std::panic::catch_unwind(capture_detect::capture_ui_active).unwrap_or(false);
             if active {
                 extend_capture_yield();
                 was_active = true;
-            } else if was_active {
-                // 캡처 직후 알림 토스트(수 초)까지 가리지 않도록 유예
-                extend_capture_yield();
-                was_active = false;
+            } else {
+                if was_active {
+                    // 캡처 직후 알림 토스트용 짧은 유예
+                    extend_capture_yield();
+                    was_active = false;
+                } else {
+                    // 캡처 UI가 완전히 꺼지면 하드캡 락 해제
+                    YIELD_EXHAUSTED.store(false, Ordering::SeqCst);
+                }
             }
 
             let yielding = capture_yield_active();
