@@ -37,6 +37,37 @@ body.overlay-body {
   pointer-events: none;
 }
 
+.actor-name {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 4px);
+  transform: translateX(-50%);
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(28, 36, 48, 0.82);
+  color: #fff;
+  white-space: nowrap;
+  max-width: 88px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  z-index: 3;
+}
+
+/* 상대: 닉네임은 캐릭터 바로 위 고정, 상태/채팅은 그 위로 */
+.actor:not(.self) .bubble {
+  bottom: calc(100% + 28px);
+}
+
+.actor:not(.self) .status-bubble {
+  bottom: calc(100% + 28px);
+}
+
+.actor:not(.self) .status-bubble.with-chat {
+  bottom: calc(100% + 64px);
+}
+
 .overlay-menu {
   display: none;
 }
@@ -539,14 +570,27 @@ input::placeholder {
   border-radius: 12px;
   padding: 0.35rem 0.55rem;
   font-size: 12px;
-  white-space: nowrap;
+  line-height: 1.35;
+  width: max-content;
   max-width: 180px;
   overflow: hidden;
-  text-overflow: ellipsis;
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
   z-index: 2;
 }
 
+.bubble-text {
+  /* 짧은 문장은 한 줄, 길면 최대 2줄 후 … — 바깥으로 넘치지 않게 높이도 고정 */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: normal;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+  max-height: calc(1.35em * 2);
+}
 .bubble::after {
   content: "";
   position: absolute;
@@ -608,6 +652,23 @@ input::placeholder {
 .actor.edge-top .tap-hint {
   bottom: auto;
   top: calc(100% - 14px);
+}
+
+.actor.edge-top .actor-name {
+  bottom: auto;
+  top: calc(100% - 14px);
+}
+
+.actor.edge-top:not(.self) .bubble {
+  top: calc(100% + 10px);
+}
+
+.actor.edge-top:not(.self) .status-bubble {
+  top: calc(100% + 10px);
+}
+
+.actor.edge-top:not(.self) .status-bubble.with-chat {
+  top: calc(100% + 46px);
 }
 
 .parts-stack {

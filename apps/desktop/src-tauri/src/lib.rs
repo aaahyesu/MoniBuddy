@@ -12,23 +12,48 @@ use tauri_plugin_autostart::MacosLauncher;
 
 /// 0=normal, 1=yielding (capture UI / toast 양보 중)
 static YIELD_STATE: AtomicU8 = AtomicU8::new(0);
+/// 영역 선택(Win+Shift+S) 진행 중 — 클릭 통과를 강제로 유지
+static IN_REGION_SELECT: AtomicBool = AtomicBool::new(false);
 /// 사용자가 트레이/설정으로 오버레이를 켠 상태인지
 static OVERLAY_USER_VISIBLE: AtomicBool = AtomicBool::new(true);
+/// 마지막 click-through 적용값 (중복 set_ignore_cursor_events 방지)
+static CLICK_THROUGH: AtomicU8 = AtomicU8::new(255);
 /// 캡처 종료 후에도 토스트가 보이도록 양보를 유지할 시각
 static YIELD_UNTIL: Mutex<Option<Instant>> = Mutex::new(None);
 /// 이번 양보 세션이 시작된 시각 (하드 상한용)
 static YIELD_STARTED_AT: Mutex<Option<Instant>> = Mutex::new(None);
 /// MAX_YIELD 소진 후, 캡처 UI가 꺼질 때까지 재양보 금지
 static YIELD_EXHAUSTED: AtomicBool = AtomicBool::new(false);
-/// 캡처 직후 토스트용 짧은 유예
-const TOAST_GRACE: Duration = Duration::from_secs(3);
+/// 캡처 직후 토스트/캡처보드용 유예
+const TOAST_GRACE: Duration = Duration::from_secs(8);
 /// ScreenClippingHost 잔류 등으로 양보가 끝나지 않는 것 방지
-const MAX_YIELD: Duration = Duration::from_secs(10);
+const MAX_YIELD: Duration = Duration::from_secs(15);
+/// 핫키 후 ScreenClippingHost 기동 대기 (이 시간만 강제 표시 유지)
+const HOST_SPAWN_WAIT: Duration = Duration::from_millis(1200);
 
 #[tauri::command]
 fn set_click_through(app: AppHandle, enabled: bool) -> Result<(), String> {
     // 캡처 양보 중에는 클릭 통과 상태를 건드리지 않음
     if YIELD_STATE.load(Ordering::SeqCst) != 0 {
+        return Ok(());
+    }
+    // 영역 선택 중 캐릭터 위에서 클릭 통과가 꺼지면 SnippingTool이 마우스를 뺏겨
+    // 캡처보드/토스트가 안 뜸 → 이 동안은 항상 통과 유지
+    if IN_REGION_SELECT.load(Ordering::SeqCst) {
+        let overlay = app
+            .get_webview_window("overlay")
+            .ok_or_else(|| "overlay window missing".to_string())?;
+        let prev = CLICK_THROUGH.swap(1, Ordering::SeqCst);
+        if prev != 1 {
+            overlay
+                .set_ignore_cursor_events(true)
+                .map_err(|e| e.to_string())?;
+        }
+        return Ok(());
+    }
+    let next = if enabled { 1 } else { 0 };
+    let prev = CLICK_THROUGH.swap(next, Ordering::SeqCst);
+    if prev == next {
         return Ok(());
     }
     let overlay = app
@@ -143,7 +168,6 @@ fn setup_overlay(app: &AppHandle) -> Result<(), String> {
 
     let _ = overlay.set_always_on_top(true);
     let _ = overlay.set_ignore_cursor_events(true);
-    set_exclude_from_capture(&overlay, true);
     Ok(())
 }
 
@@ -167,6 +191,13 @@ fn extend_capture_yield() {
     *until = Some(if soft_end < hard_end { soft_end } else { hard_end });
 }
 
+fn clear_capture_yield() {
+    let mut until = YIELD_UNTIL.lock().unwrap_or_else(|e| e.into_inner());
+    *until = None;
+    let mut started = YIELD_STARTED_AT.lock().unwrap_or_else(|e| e.into_inner());
+    *started = None;
+}
+
 fn capture_yield_active() -> bool {
     let mut until = YIELD_UNTIL.lock().unwrap_or_else(|e| e.into_inner());
     match *until {
@@ -185,32 +216,6 @@ fn capture_yield_active() -> bool {
     }
 }
 
-#[cfg(windows)]
-fn set_exclude_from_capture(overlay: &tauri::WebviewWindow, enabled: bool) {
-    #[link(name = "user32")]
-    extern "system" {
-        fn SetWindowDisplayAffinity(hwnd: isize, affinity: u32) -> i32;
-    }
-    // WDA_EXCLUDEFROMCAPTURE = 0x11 (Win10 2004+)
-    const WDA_NONE: u32 = 0;
-    const WDA_EXCLUDEFROMCAPTURE: u32 = 0x11;
-
-    let Ok(hwnd) = overlay.hwnd() else {
-        return;
-    };
-    let affinity = if enabled {
-        WDA_EXCLUDEFROMCAPTURE
-    } else {
-        WDA_NONE
-    };
-    unsafe {
-        SetWindowDisplayAffinity(hwnd.0 as isize, affinity);
-    }
-}
-
-#[cfg(not(windows))]
-fn set_exclude_from_capture(_overlay: &tauri::WebviewWindow, _enabled: bool) {}
-
 fn apply_capture_yield(app: &AppHandle, should_yield: bool) {
     let next = if should_yield { 1 } else { 0 };
     let prev = YIELD_STATE.swap(next, Ordering::SeqCst);
@@ -222,15 +227,73 @@ fn apply_capture_yield(app: &AppHandle, should_yield: bool) {
     };
 
     if should_yield {
-        // 숨기지 않음 — 캡처 제외 + alwaysOnTop만 내려 토스트/캡처 UI를 가리지 않음
-        set_exclude_from_capture(&overlay, true);
+        IN_REGION_SELECT.store(false, Ordering::SeqCst);
+        // 전체화면 alwaysOnTop은 토스트/캡처보드를 가리므로 숨김 + z-order 강등
         let _ = overlay.set_always_on_top(false);
+        demote_overlay_zorder(&overlay);
+        let _ = overlay.hide();
     } else if OVERLAY_USER_VISIBLE.load(Ordering::SeqCst) {
         let _ = overlay.show();
-        set_exclude_from_capture(&overlay, true);
         let _ = overlay.set_always_on_top(true);
         let _ = overlay.set_ignore_cursor_events(true);
+        CLICK_THROUGH.store(255, Ordering::SeqCst);
     }
+}
+
+#[cfg(windows)]
+fn demote_overlay_zorder(overlay: &tauri::WebviewWindow) {
+    #[link(name = "user32")]
+    extern "system" {
+        fn SetWindowPos(
+            hwnd: isize,
+            hwnd_insert_after: isize,
+            x: i32,
+            y: i32,
+            cx: i32,
+            cy: i32,
+            flags: u32,
+        ) -> i32;
+    }
+    const HWND_BOTTOM: isize = 1;
+    const SWP_NOMOVE: u32 = 0x0002;
+    const SWP_NOSIZE: u32 = 0x0001;
+    const SWP_NOACTIVATE: u32 = 0x0010;
+
+    let Ok(hwnd) = overlay.hwnd() else {
+        return;
+    };
+    unsafe {
+        SetWindowPos(
+            hwnd.0 as isize,
+            HWND_BOTTOM,
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+        );
+    }
+}
+
+#[cfg(not(windows))]
+fn demote_overlay_zorder(_overlay: &tauri::WebviewWindow) {}
+
+/// 캡처 세션 중 강제 표시 (양보 상태와 무관하게 show + topmost)
+fn force_overlay_visible_for_capture(app: &AppHandle) {
+    // clear_capture_yield 는 호출부에서 새 세션 시작 시에만 수행
+    YIELD_STATE.store(0, Ordering::SeqCst);
+    IN_REGION_SELECT.store(true, Ordering::SeqCst);
+    if !OVERLAY_USER_VISIBLE.load(Ordering::SeqCst) {
+        return;
+    }
+    let Some(overlay) = app.get_webview_window("overlay") else {
+        return;
+    };
+    let _ = overlay.show();
+    let _ = overlay.set_always_on_top(true);
+    // SnippingTool이 캐릭터 위 드래그도 받을 수 있게 항상 클릭 통과
+    let _ = overlay.set_ignore_cursor_events(true);
+    CLICK_THROUGH.store(1, Ordering::SeqCst);
 }
 
 #[cfg(windows)]
@@ -242,9 +305,6 @@ mod capture_detect {
     extern "system" {
         fn GetForegroundWindow() -> isize;
         fn GetWindowThreadProcessId(hwnd: isize, lpdw_process_id: *mut u32) -> u32;
-        fn GetWindowTextLengthW(hwnd: isize) -> i32;
-        fn GetWindowTextW(hwnd: isize, lp_string: *mut u16, n_max_count: i32) -> i32;
-        fn GetClassNameW(hwnd: isize, lp_class_name: *mut u16, n_max_count: i32) -> i32;
         fn GetAsyncKeyState(v_key: i32) -> i16;
     }
 
@@ -258,34 +318,41 @@ mod capture_detect {
             buffer: *mut u16,
             size: *mut u32,
         ) -> i32;
+        fn CreateToolhelp32Snapshot(flags: u32, process_id: u32) -> isize;
+        fn Process32FirstW(snapshot: isize, entry: *mut ProcessEntry32W) -> i32;
+        fn Process32NextW(snapshot: isize, entry: *mut ProcessEntry32W) -> i32;
     }
 
     const PROCESS_QUERY_LIMITED_INFORMATION: u32 = 0x1000;
+    const TH32CS_SNAPPROCESS: u32 = 0x00000002;
+    const INVALID_HANDLE_VALUE: isize = -1;
 
-    const CAPTURE_PROCESS_HINTS: &[&str] = &[
-        "screenclippinghost",
-        "snippingtool",
-        "screensketch",
-        "sharex",
-        "greenshot",
-        "lightshot",
-        "picpick",
-        "flameshot",
-    ];
+    #[repr(C)]
+    struct ProcessEntry32W {
+        dw_size: u32,
+        cnt_usage: u32,
+        th32_process_id: u32,
+        th32_default_heap_id: usize,
+        th32_module_id: u32,
+        cnt_threads: u32,
+        th32_parent_process_id: u32,
+        pc_pri_class_base: i32,
+        dw_flags: u32,
+        sz_exe_file: [u16; 260],
+    }
 
-    const CAPTURE_TITLE_HINTS: &[&str] = &[
-        "snipping",
-        "snip & sketch",
-        "screen sketch",
-        "스크린샷",
-        "screenshot",
-    ];
+    /// 영역 선택 중에만 뜨는 호스트 (캡처보드/편집 UI인 SnippingTool 등은 제외)
+    const REGION_SELECT_PROCESSES: &[&str] = &["screenclippinghost"];
 
     fn wide_to_string(buf: &[u16]) -> String {
         let len = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
         OsString::from_wide(&buf[..len])
             .to_string_lossy()
             .to_lowercase()
+    }
+
+    fn name_matches_any(name: &str, hints: &[&str]) -> bool {
+        hints.iter().any(|h| name.contains(h))
     }
 
     fn process_name_for_pid(pid: u32) -> Option<String> {
@@ -326,18 +393,39 @@ mod capture_detect {
         }
     }
 
-    fn foreground_title_and_class() -> (String, String) {
+    fn any_process_matching(hints: &[&str]) -> bool {
         unsafe {
-            let hwnd = GetForegroundWindow();
-            if hwnd == 0 {
-                return (String::new(), String::new());
+            let snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+            if snap == 0 || snap == INVALID_HANDLE_VALUE {
+                return false;
             }
-            let title_len = GetWindowTextLengthW(hwnd).max(0) as usize + 1;
-            let mut title_buf = vec![0u16; title_len.max(1)];
-            GetWindowTextW(hwnd, title_buf.as_mut_ptr(), title_buf.len() as i32);
-            let mut class_buf = [0u16; 256];
-            GetClassNameW(hwnd, class_buf.as_mut_ptr(), class_buf.len() as i32);
-            (wide_to_string(&title_buf), wide_to_string(&class_buf))
+            let mut entry = ProcessEntry32W {
+                dw_size: std::mem::size_of::<ProcessEntry32W>() as u32,
+                cnt_usage: 0,
+                th32_process_id: 0,
+                th32_default_heap_id: 0,
+                th32_module_id: 0,
+                cnt_threads: 0,
+                th32_parent_process_id: 0,
+                pc_pri_class_base: 0,
+                dw_flags: 0,
+                sz_exe_file: [0; 260],
+            };
+            let mut found = false;
+            if Process32FirstW(snap, &mut entry) != 0 {
+                loop {
+                    let name = wide_to_string(&entry.sz_exe_file);
+                    if name_matches_any(&name, hints) {
+                        found = true;
+                        break;
+                    }
+                    if Process32NextW(snap, &mut entry) == 0 {
+                        break;
+                    }
+                }
+            }
+            CloseHandle(snap);
+            found
         }
     }
 
@@ -352,54 +440,103 @@ mod capture_detect {
         }
     }
 
-    pub fn capture_ui_active() -> bool {
+    pub fn screen_clipping_host_running() -> bool {
+        any_process_matching(REGION_SELECT_PROCESSES)
+    }
+
+    /// 영역 선택(ScreenClippingHost / 핫키)만 — 캡처보드·토스트 구간은 제외
+    pub fn region_select_active() -> bool {
         if capture_hotkey_down() {
             return true;
         }
+        if screen_clipping_host_running() {
+            return true;
+        }
         if let Some(name) = foreground_process_name() {
-            if CAPTURE_PROCESS_HINTS.iter().any(|h| name.contains(h)) {
+            if name_matches_any(&name, REGION_SELECT_PROCESSES) {
                 return true;
             }
         }
-        let (title, class_name) = foreground_title_and_class();
-        CAPTURE_TITLE_HINTS
-            .iter()
-            .any(|h| title.contains(h) || class_name.contains(h))
+        false
     }
 }
 
 #[cfg(not(windows))]
 mod capture_detect {
-    pub fn capture_ui_active() -> bool {
+    pub fn region_select_active() -> bool {
+        false
+    }
+
+    pub fn screen_clipping_host_running() -> bool {
         false
     }
 }
 
 fn spawn_capture_yield_watcher(app: AppHandle) {
     thread::spawn(move || {
-        let mut was_active = false;
+        let mut in_capture_session = false;
+        let mut session_started_at: Option<Instant> = None;
+        let mut saw_clipping_host = false;
+        /// 토스트 양보 직후 핫키/감지 깜빡임으로 양보가 취소되지 않게
+        let mut suppress_select_until: Option<Instant> = None;
+
         loop {
-            let active =
-                std::panic::catch_unwind(capture_detect::capture_ui_active).unwrap_or(false);
-            if active {
-                extend_capture_yield();
-                was_active = true;
-            } else {
-                if was_active {
-                    // 캡처 직후 알림 토스트용 짧은 유예
-                    extend_capture_yield();
-                    was_active = false;
+            let selecting =
+                std::panic::catch_unwind(capture_detect::region_select_active).unwrap_or(false);
+            let host_running = std::panic::catch_unwind(
+                capture_detect::screen_clipping_host_running,
+            )
+            .unwrap_or(false);
+
+            let toast_yielding = capture_yield_active();
+            let select_suppressed = suppress_select_until
+                .is_some_and(|t| Instant::now() < t)
+                && !host_running;
+
+            if selecting && !select_suppressed {
+                if !in_capture_session {
+                    // 새 캡처만 양보 타이머를 지움 (토스트 중 깜빡임 재진입 방지)
+                    clear_capture_yield();
+                    YIELD_STATE.store(0, Ordering::SeqCst);
+                    session_started_at = Some(Instant::now());
+                    saw_clipping_host = false;
+                    suppress_select_until = None;
+                }
+                in_capture_session = true;
+                if host_running {
+                    saw_clipping_host = true;
+                }
+                let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    force_overlay_visible_for_capture(&app);
+                }));
+            } else if in_capture_session {
+                let started = session_started_at.unwrap_or_else(Instant::now);
+                let waiting_for_host = !saw_clipping_host && started.elapsed() < HOST_SPAWN_WAIT;
+                if waiting_for_host {
+                    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        force_overlay_visible_for_capture(&app);
+                    }));
                 } else {
-                    // 캡처 UI가 완전히 꺼지면 하드캡 락 해제
-                    YIELD_EXHAUSTED.store(false, Ordering::SeqCst);
+                    IN_REGION_SELECT.store(false, Ordering::SeqCst);
+                    extend_capture_yield();
+                    suppress_select_until = Some(Instant::now() + TOAST_GRACE);
+                    in_capture_session = false;
+                    session_started_at = None;
+                    saw_clipping_host = false;
+                }
+            } else if !toast_yielding {
+                IN_REGION_SELECT.store(false, Ordering::SeqCst);
+                YIELD_EXHAUSTED.store(false, Ordering::SeqCst);
+                if suppress_select_until.is_some_and(|t| Instant::now() >= t) {
+                    suppress_select_until = None;
                 }
             }
 
-            let yielding = capture_yield_active();
+            let yielding = !in_capture_session && capture_yield_active();
             let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 apply_capture_yield(&app, yielding);
             }));
-            thread::sleep(Duration::from_millis(120));
+            thread::sleep(Duration::from_millis(80));
         }
     });
 }

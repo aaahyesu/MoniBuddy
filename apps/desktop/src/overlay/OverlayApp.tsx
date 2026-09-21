@@ -393,6 +393,7 @@ export function OverlayApp() {
   useEffect(() => {
     if (!isTauri()) return;
     let alive = true;
+    let lastCapture: boolean | null = null;
     const loop = async () => {
       while (alive) {
         try {
@@ -403,11 +404,13 @@ export function OverlayApp() {
           }
           const [cx, cy] = pos;
           const { w, h } = sizeRef.current;
+          // 히스테리시스: 한 번 잡히면 살짝 넓게 유지해 경계에서 토글/커서 깜빡임 방지
+          const hitPad = lastCapture ? HIT_PAD + 18 : HIT_PAD;
           const overSelf = actorsRef.current.some(
             (a) =>
               a.isSelf &&
-              Math.abs(cx - a.x) <= HIT_PAD &&
-              Math.abs(cy - a.y) <= HIT_PAD,
+              Math.abs(cx - a.x) <= hitPad &&
+              Math.abs(cy - a.y) <= hitPad,
           );
           const overChat =
             panelOpenRef.current &&
@@ -424,7 +427,11 @@ export function OverlayApp() {
             overRepositionBar ||
             draggingRef.current ||
             (panelOpenRef.current && !repositionRef.current);
-          await invokeSafe("set_click_through", { enabled: !capture });
+          // 같은 상태를 반복 적용하면 Windows에서 커서가 깜빡임
+          if (lastCapture !== capture) {
+            lastCapture = capture;
+            await invokeSafe("set_click_through", { enabled: !capture });
+          }
         } catch {
           /* ignore */
         }
@@ -621,7 +628,8 @@ export function OverlayApp() {
         member: m,
         x: pt.x,
         y: pt.y,
-        facing: m.state.facing,
+        edge: pt.edge,
+        facing: pt.facing,
         bubble,
         isSelf: self,
       };
@@ -636,8 +644,7 @@ export function OverlayApp() {
 
   return (
     <div className="overlay-root">
-      {actors.map(({ member, x, y, facing, bubble, isSelf }) => {
-        const edge = member.state.edge || "top";
+      {actors.map(({ member, x, y, edge, facing, bubble, isSelf }) => {
         return (
         <div
           key={member.id}
@@ -665,7 +672,11 @@ export function OverlayApp() {
               : undefined
           }
         >
-          {bubble && <div className="bubble">{bubble.text}</div>}
+          {bubble && (
+            <div className="bubble">
+              <span className="bubble-text">{bubble.text}</span>
+            </div>
+          )}
           {(() => {
             const statusText = (
               isSelf ? statusMessage : member.statusMessage || ""
@@ -679,6 +690,9 @@ export function OverlayApp() {
           })()}
           {isSelf && !bubble && !statusMessage && !panelOpen && (
             <div className="tap-hint">나</div>
+          )}
+          {!isSelf && !!member.nickname?.trim() && (
+            <div className="actor-name">{member.nickname.trim()}</div>
           )}
           <CharacterView
             character={member.character}
