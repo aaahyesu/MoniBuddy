@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Manager, WebviewUrl, WebviewWindowBuilder,
+    AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder,
 };
 use tauri_plugin_autostart::MacosLauncher;
 
@@ -14,6 +14,8 @@ use tauri_plugin_autostart::MacosLauncher;
 static YIELD_STATE: AtomicU8 = AtomicU8::new(0);
 /// 영역 선택(Win+Shift+S) 진행 중 — 클릭 통과를 강제로 유지
 static IN_REGION_SELECT: AtomicBool = AtomicBool::new(false);
+/// 캡처 UI 동안 프론트 캐릭터 이동 정지
+static CAPTURE_FREEZE: AtomicBool = AtomicBool::new(false);
 /// 사용자가 트레이/설정으로 오버레이를 켠 상태인지
 static OVERLAY_USER_VISIBLE: AtomicBool = AtomicBool::new(true);
 /// 마지막 click-through 적용값 (중복 set_ignore_cursor_events 방지)
@@ -30,6 +32,8 @@ const TOAST_GRACE: Duration = Duration::from_secs(8);
 const MAX_YIELD: Duration = Duration::from_secs(15);
 /// 핫키 후 ScreenClippingHost 기동 대기 (이 시간만 강제 표시 유지)
 const HOST_SPAWN_WAIT: Duration = Duration::from_millis(1200);
+/// 영역 선택 종료로 보기 전, 감지 끊김을 무시하는 시간 (이 동안 이동 정지 유지)
+const CAPTURE_END_DEBOUNCE: Duration = Duration::from_millis(900);
 
 #[tauri::command]
 fn set_click_through(app: AppHandle, enabled: bool) -> Result<(), String> {
@@ -151,6 +155,19 @@ fn get_cursor_pos(app: AppHandle) -> Result<(f64, f64), String> {
     let x = (cursor.x as f64 - origin.x as f64) / scale;
     let y = (cursor.y as f64 - origin.y as f64) / scale;
     Ok((x, y))
+}
+
+#[tauri::command]
+fn is_capture_freeze() -> bool {
+    CAPTURE_FREEZE.load(Ordering::SeqCst)
+}
+
+fn notify_capture_freeze(app: &AppHandle, frozen: bool) {
+    let prev = CAPTURE_FREEZE.swap(frozen, Ordering::SeqCst);
+    if prev == frozen {
+        return;
+    }
+    let _ = app.emit("capture-freeze", frozen);
 }
 
 fn setup_overlay(app: &AppHandle) -> Result<(), String> {
@@ -491,8 +508,9 @@ fn spawn_capture_yield_watcher(app: AppHandle) {
         let mut in_capture_session = false;
         let mut session_started_at: Option<Instant> = None;
         let mut saw_clipping_host = false;
-        /// 토스트 양보 직후 핫키/감지 깜빡임으로 양보가 취소되지 않게
+        // 토스트 양보 직후 핫키/감지 깜빡임으로 양보가 취소되지 않게
         let mut suppress_select_until: Option<Instant> = None;
+        let mut inactive_since: Option<Instant> = None;
         let mut last_topmost_refresh = Instant::now();
 
         loop {
@@ -508,9 +526,11 @@ fn spawn_capture_yield_watcher(app: AppHandle) {
                 .is_some_and(|t| Instant::now() < t)
                 && !host_running;
 
-            if selecting && !select_suppressed {
+            // Host가 한 프레임만 안 잡혀도 세션을 유지 (정지 풀림 방지)
+            let active = (selecting || host_running) && !select_suppressed;
+
+            if active {
                 if !in_capture_session {
-                    // 새 캡처만 양보 타이머를 지움 (토스트 중 깜빡임 재진입 방지)
                     clear_capture_yield();
                     YIELD_STATE.store(0, Ordering::SeqCst);
                     session_started_at = Some(Instant::now());
@@ -518,6 +538,8 @@ fn spawn_capture_yield_watcher(app: AppHandle) {
                     suppress_select_until = None;
                 }
                 in_capture_session = true;
+                inactive_since = None;
+                notify_capture_freeze(&app, true);
                 if host_running {
                     saw_clipping_host = true;
                 }
@@ -528,20 +550,35 @@ fn spawn_capture_yield_watcher(app: AppHandle) {
                 let started = session_started_at.unwrap_or_else(Instant::now);
                 let waiting_for_host = !saw_clipping_host && started.elapsed() < HOST_SPAWN_WAIT;
                 if waiting_for_host {
+                    inactive_since = None;
+                    notify_capture_freeze(&app, true);
                     let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                         force_overlay_visible_for_capture(&app);
                     }));
                 } else {
-                    IN_REGION_SELECT.store(false, Ordering::SeqCst);
-                    extend_capture_yield();
-                    suppress_select_until = Some(Instant::now() + TOAST_GRACE);
-                    in_capture_session = false;
-                    session_started_at = None;
-                    saw_clipping_host = false;
+                    let since = inactive_since.get_or_insert_with(Instant::now);
+                    // 감지 끊김 디바운스 동안은 계속 정지 (멈췄다가 다시 움직이던 원인)
+                    if since.elapsed() < CAPTURE_END_DEBOUNCE {
+                        notify_capture_freeze(&app, true);
+                        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            force_overlay_visible_for_capture(&app);
+                        }));
+                    } else {
+                        notify_capture_freeze(&app, false);
+                        IN_REGION_SELECT.store(false, Ordering::SeqCst);
+                        extend_capture_yield();
+                        suppress_select_until = Some(Instant::now() + TOAST_GRACE);
+                        in_capture_session = false;
+                        session_started_at = None;
+                        saw_clipping_host = false;
+                        inactive_since = None;
+                    }
                 }
             } else if !toast_yielding {
+                notify_capture_freeze(&app, false);
                 IN_REGION_SELECT.store(false, Ordering::SeqCst);
                 YIELD_EXHAUSTED.store(false, Ordering::SeqCst);
+                inactive_since = None;
                 if suppress_select_until.is_some_and(|t| Instant::now() >= t) {
                     suppress_select_until = None;
                 }
@@ -579,7 +616,8 @@ pub fn run() {
             set_click_through,
             show_settings,
             toggle_overlay,
-            get_cursor_pos
+            get_cursor_pos,
+            is_capture_freeze
         ])
         .setup(|app| {
             #[cfg(desktop)]

@@ -151,6 +151,20 @@ export function OverlayApp() {
   const moveRef = useRef(move);
   const membersRef = useRef(members);
   const dragStartRef = useRef<{ x: number; y: number; moved: boolean } | null>(null);
+  /** Win+Shift+S 영역 선택 중 — 캡처 화면처럼 이동 정지 */
+  const captureFreezeRef = useRef(false);
+  const captureFreezeStickyUntilRef = useRef(0);
+
+  const setCaptureFreeze = (frozen: boolean) => {
+    if (frozen) {
+      captureFreezeRef.current = true;
+      // 감지 깜빡임으로 바로 풀리지 않게 최소 유지
+      captureFreezeStickyUntilRef.current = Date.now() + 1200;
+      return;
+    }
+    if (Date.now() < captureFreezeStickyUntilRef.current) return;
+    captureFreezeRef.current = false;
+  };
 
   panelOpenRef.current = panelOpen;
   draggingRef.current = dragging;
@@ -314,11 +328,34 @@ export function OverlayApp() {
   }, []);
 
   useEffect(() => {
+    if (!isTauri()) return;
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+    void (async () => {
+      const frozen = await invokeSafe<boolean>("is_capture_freeze");
+      if (!cancelled && frozen != null) setCaptureFreeze(frozen);
+      try {
+        const { listen } = await import("@tauri-apps/api/event");
+        if (cancelled) return;
+        unlisten = await listen<boolean>("capture-freeze", (ev) => {
+          setCaptureFreeze(Boolean(ev.payload));
+        });
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, []);
+
+  useEffect(() => {
     let raf = 0;
     const tick = (now: number) => {
       const dt = Math.min(0.05, (now - lastTs.current) / 1000);
       lastTs.current = now;
-      if (!draggingRef.current) {
+      if (!draggingRef.current && !captureFreezeRef.current) {
         const { speed, walking, pathMode } = moveRef.current;
         setMembers((prev) =>
           prev.map((m) => {
@@ -391,6 +428,8 @@ export function OverlayApp() {
     const loop = async () => {
       while (alive) {
         try {
+          const frozen = await invokeSafe<boolean>("is_capture_freeze");
+          if (frozen != null) setCaptureFreeze(frozen);
           const pos = await invokeSafe<[number, number]>("get_cursor_pos");
           if (!pos) {
             await new Promise((r) => setTimeout(r, 80));
