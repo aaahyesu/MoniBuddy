@@ -21,6 +21,10 @@ type Seg = {
 };
 
 const FIXED_INSET = 40;
+/** 상단: 캐릭터 윗부분 잘림 방지 — 클수록 아래로 */
+const TOP_INSET = 56;
+/** 하단: 작업표시줄 위 + 여유 — 클수록 캐릭터가 위로 */
+const BOTTOM_INSET = 110;
 
 function edgesForMode(mode: PathMode): Edge[] {
   if (mode === "all") return ["top", "right", "bottom", "left"];
@@ -34,9 +38,11 @@ function buildSegments(
   mode: PathMode,
 ): Seg[] {
   const left = inset;
-  const top = inset;
+  const topPad = Math.max(inset, TOP_INSET);
+  const top = topPad;
   const right = Math.max(inset + 1, width - inset);
-  const bottom = Math.max(inset + 1, height - inset);
+  const bottomPad = Math.max(inset, BOTTOM_INSET);
+  const bottom = Math.max(inset + 1, height - bottomPad);
   const w = Math.max(1, right - left);
   const h = Math.max(1, bottom - top);
 
