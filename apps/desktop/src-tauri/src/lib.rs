@@ -26,14 +26,16 @@ static YIELD_UNTIL: Mutex<Option<Instant>> = Mutex::new(None);
 static YIELD_STARTED_AT: Mutex<Option<Instant>> = Mutex::new(None);
 /// MAX_YIELD 소진 후, 캡처 UI가 꺼질 때까지 재양보 금지
 static YIELD_EXHAUSTED: AtomicBool = AtomicBool::new(false);
-/// 캡처 직후 토스트/캡처보드용 유예
-const TOAST_GRACE: Duration = Duration::from_secs(8);
+/// 캡처 직후 토스트/캡처보드용 유예 (캡처 "중"에는 숨기지 않음)
+const TOAST_GRACE: Duration = Duration::from_secs(5);
 /// ScreenClippingHost 잔류 등으로 양보가 끝나지 않는 것 방지
 const MAX_YIELD: Duration = Duration::from_secs(15);
-/// 핫키 후 ScreenClippingHost 기동 대기 (이 시간만 강제 표시 유지)
+/// 핫키 감지 직후 세션 유지 (캐릭터 표시+이동정지, 숨기지 않음)
+const HOTKEY_SESSION_HOLD: Duration = Duration::from_secs(12);
+/// 핫키 후 ScreenClippingHost 기동 대기
 const HOST_SPAWN_WAIT: Duration = Duration::from_millis(1200);
-/// 영역 선택 종료로 보기 전, 감지 끊김을 무시하는 시간 (이 동안 이동 정지 유지)
-const CAPTURE_END_DEBOUNCE: Duration = Duration::from_millis(900);
+/// 영역 선택 종료 확정 전 감지 끊김 유예
+const CAPTURE_END_DEBOUNCE: Duration = Duration::from_millis(500);
 
 #[tauri::command]
 fn set_click_through(app: AppHandle, enabled: bool) -> Result<(), String> {
@@ -236,19 +238,22 @@ fn capture_yield_active() -> bool {
 fn apply_capture_yield(app: &AppHandle, should_yield: bool) {
     let next = if should_yield { 1 } else { 0 };
     let prev = YIELD_STATE.swap(next, Ordering::SeqCst);
-    if prev == next {
-        return;
-    }
     let Some(overlay) = app.get_webview_window("overlay") else {
         return;
     };
 
     if should_yield {
         IN_REGION_SELECT.store(false, Ordering::SeqCst);
-        // hide만으로 토스트 확보 — HWND_BOTTOM 강등은 복구 후에도 창이 뒤로 남는 원인
+        // 상태가 같아도 매 틱 재적용 — 다른 경로가 show/topmost 해도 다시 숨김
         let _ = overlay.set_always_on_top(false);
         let _ = overlay.hide();
-    } else if OVERLAY_USER_VISIBLE.load(Ordering::SeqCst) {
+        return;
+    }
+
+    if prev == next {
+        return;
+    }
+    if OVERLAY_USER_VISIBLE.load(Ordering::SeqCst) {
         restore_overlay_foreground(&overlay);
     }
 }
@@ -372,7 +377,7 @@ mod capture_detect {
         sz_exe_file: [u16; 260],
     }
 
-    /// 영역 선택 중에만 뜨는 호스트 (캡처보드/편집 UI인 SnippingTool 등은 제외)
+    /// 영역 선택 중 프로세스 (상주 SnippingTool은 제외 — 항상 숨김 방지)
     const REGION_SELECT_PROCESSES: &[&str] = &["screenclippinghost"];
 
     fn wide_to_string(buf: &[u16]) -> String {
@@ -467,6 +472,7 @@ mod capture_detect {
             let shift = GetAsyncKeyState(0x10) as u16 & 0x8000 != 0;
             let s = GetAsyncKeyState(0x53) as u16 & 0x8000 != 0;
             let print_screen = GetAsyncKeyState(0x2C) as u16 & 0x8000 != 0;
+            // Win+Shift+S 또는 PrtSc
             print_screen || (win && shift && s)
         }
     }
@@ -475,7 +481,7 @@ mod capture_detect {
         any_process_matching(REGION_SELECT_PROCESSES)
     }
 
-    /// 영역 선택(ScreenClippingHost / 핫키)만 — 캡처보드·토스트 구간은 제외
+    /// 핫키 또는 캡처 관련 프로세스
     pub fn region_select_active() -> bool {
         if capture_hotkey_down() {
             return true;
@@ -494,6 +500,10 @@ mod capture_detect {
 
 #[cfg(not(windows))]
 mod capture_detect {
+    pub fn capture_hotkey_down() -> bool {
+        false
+    }
+
     pub fn region_select_active() -> bool {
         false
     }
@@ -508,71 +518,74 @@ fn spawn_capture_yield_watcher(app: AppHandle) {
         let mut in_capture_session = false;
         let mut session_started_at: Option<Instant> = None;
         let mut saw_clipping_host = false;
-        // 토스트 양보 직후 핫키/감지 깜빡임으로 양보가 취소되지 않게
         let mut suppress_select_until: Option<Instant> = None;
         let mut inactive_since: Option<Instant> = None;
+        let mut hotkey_hold_until: Option<Instant> = None;
         let mut last_topmost_refresh = Instant::now();
 
         loop {
-            let selecting =
-                std::panic::catch_unwind(capture_detect::region_select_active).unwrap_or(false);
+            let hotkey =
+                std::panic::catch_unwind(capture_detect::capture_hotkey_down).unwrap_or(false);
             let host_running = std::panic::catch_unwind(
                 capture_detect::screen_clipping_host_running,
             )
             .unwrap_or(false);
+            let selecting =
+                std::panic::catch_unwind(capture_detect::region_select_active).unwrap_or(false);
+
+            if hotkey {
+                hotkey_hold_until = Some(Instant::now() + HOTKEY_SESSION_HOLD);
+            }
+            // Host를 본 뒤 사라지면 세션 종료 쪽으로
+            if saw_clipping_host && !host_running && !hotkey {
+                hotkey_hold_until = None;
+            }
+            let hotkey_hold = hotkey_hold_until.is_some_and(|t| Instant::now() < t);
 
             let toast_yielding = capture_yield_active();
             let select_suppressed = suppress_select_until
                 .is_some_and(|t| Instant::now() < t)
-                && !host_running;
+                && !host_running
+                && !hotkey_hold;
 
-            // Host가 한 프레임만 안 잡혀도 세션을 유지 (정지 풀림 방지)
-            let active = (selecting || host_running) && !select_suppressed;
+            let capturing =
+                (selecting || host_running || hotkey || hotkey_hold) && !select_suppressed;
+            let started = session_started_at.unwrap_or_else(Instant::now);
+            let waiting_for_host =
+                in_capture_session && !saw_clipping_host && started.elapsed() < HOST_SPAWN_WAIT;
 
-            if active {
+            if capturing || waiting_for_host {
+                // 캡처 중: 캐릭터 유지(스크린샷 포함) + 이동만 정지
                 if !in_capture_session {
-                    clear_capture_yield();
-                    YIELD_STATE.store(0, Ordering::SeqCst);
                     session_started_at = Some(Instant::now());
                     saw_clipping_host = false;
                     suppress_select_until = None;
+                    YIELD_EXHAUSTED.store(false, Ordering::SeqCst);
                 }
                 in_capture_session = true;
                 inactive_since = None;
-                notify_capture_freeze(&app, true);
                 if host_running {
                     saw_clipping_host = true;
                 }
+                clear_capture_yield();
+                notify_capture_freeze(&app, true);
                 let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     force_overlay_visible_for_capture(&app);
                 }));
             } else if in_capture_session {
-                let started = session_started_at.unwrap_or_else(Instant::now);
-                let waiting_for_host = !saw_clipping_host && started.elapsed() < HOST_SPAWN_WAIT;
-                if waiting_for_host {
+                // 캡처 종료 → 토스트용으로만 숨김 (캐릭터는 캡처 중에 이미 찍힘)
+                let since = inactive_since.get_or_insert_with(Instant::now);
+                notify_capture_freeze(&app, true);
+                extend_capture_yield();
+                if since.elapsed() >= CAPTURE_END_DEBOUNCE {
+                    notify_capture_freeze(&app, false);
+                    IN_REGION_SELECT.store(false, Ordering::SeqCst);
+                    suppress_select_until = Some(Instant::now() + TOAST_GRACE);
+                    hotkey_hold_until = None;
+                    in_capture_session = false;
+                    session_started_at = None;
+                    saw_clipping_host = false;
                     inactive_since = None;
-                    notify_capture_freeze(&app, true);
-                    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                        force_overlay_visible_for_capture(&app);
-                    }));
-                } else {
-                    let since = inactive_since.get_or_insert_with(Instant::now);
-                    // 감지 끊김 디바운스 동안은 계속 정지 (멈췄다가 다시 움직이던 원인)
-                    if since.elapsed() < CAPTURE_END_DEBOUNCE {
-                        notify_capture_freeze(&app, true);
-                        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                            force_overlay_visible_for_capture(&app);
-                        }));
-                    } else {
-                        notify_capture_freeze(&app, false);
-                        IN_REGION_SELECT.store(false, Ordering::SeqCst);
-                        extend_capture_yield();
-                        suppress_select_until = Some(Instant::now() + TOAST_GRACE);
-                        in_capture_session = false;
-                        session_started_at = None;
-                        saw_clipping_host = false;
-                        inactive_since = None;
-                    }
                 }
             } else if !toast_yielding {
                 notify_capture_freeze(&app, false);
@@ -582,7 +595,6 @@ fn spawn_capture_yield_watcher(app: AppHandle) {
                 if suppress_select_until.is_some_and(|t| Instant::now() >= t) {
                     suppress_select_until = None;
                 }
-                // 다른 창에 가려지지 않도록 주기적으로 TOPMOST 재적용
                 if OVERLAY_USER_VISIBLE.load(Ordering::SeqCst)
                     && YIELD_STATE.load(Ordering::SeqCst) == 0
                     && last_topmost_refresh.elapsed() >= Duration::from_millis(500)
@@ -595,11 +607,13 @@ fn spawn_capture_yield_watcher(app: AppHandle) {
                 }
             }
 
-            let yielding = !in_capture_session && capture_yield_active();
+            // 캡처 "중"에는 숨기지 않음 — 끝난 뒤에만 양보
+            let yielding =
+                capture_yield_active() && !capturing && !waiting_for_host;
             let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 apply_capture_yield(&app, yielding);
             }));
-            thread::sleep(Duration::from_millis(80));
+            thread::sleep(Duration::from_millis(50));
         }
     });
 }
