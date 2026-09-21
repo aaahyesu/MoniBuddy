@@ -585,7 +585,7 @@ input::placeholder {
 /* 상단 변: 말풍선·상태메시지를 캐릭터 바로 아래에 가깝게 */
 .actor.edge-top .bubble {
   bottom: auto;
-  top: calc(100% - 4px);
+  top: calc(100% - 14px);
 }
 
 .actor.edge-top .bubble::after {
@@ -597,17 +597,17 @@ input::placeholder {
 
 .actor.edge-top .status-bubble {
   bottom: auto;
-  top: calc(100% - 4px);
+  top: calc(100% - 14px);
 }
 
 .actor.edge-top .status-bubble.with-chat {
   bottom: auto;
-  top: calc(100% + 28px);
+  top: calc(100% + 18px);
 }
 
 .actor.edge-top .tap-hint {
   bottom: auto;
-  top: calc(100% - 4px);
+  top: calc(100% - 14px);
 }
 
 .parts-stack {
