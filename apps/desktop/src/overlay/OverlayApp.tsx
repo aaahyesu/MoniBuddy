@@ -279,13 +279,7 @@ export function OverlayApp() {
         seenChat.current.add(msg.id);
         setBubbles((prev) => [
           ...prev.filter(
-            (b) =>
-              b.until > Date.now() &&
-              !(
-                b.id.startsWith("local-") &&
-                b.memberId === msg.memberId &&
-                b.text === msg.text
-              ),
+            (b) => b.until > Date.now() && b.memberId !== msg.memberId,
           ),
           {
             memberId: msg.memberId,
@@ -592,7 +586,7 @@ export function OverlayApp() {
     const selfId = selfIdRef.current || "local";
     const optimisticId = `local-${Date.now()}`;
     setBubbles((prev) => [
-      ...prev.filter((b) => b.until > Date.now()),
+      ...prev.filter((b) => b.until > Date.now() && b.memberId !== selfId),
       {
         memberId: selfId,
         text,

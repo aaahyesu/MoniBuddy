@@ -37,39 +37,37 @@ fn set_click_through(app: AppHandle, enabled: bool) -> Result<(), String> {
     if YIELD_STATE.load(Ordering::SeqCst) != 0 {
         return Ok(());
     }
-    // 영역 선택 중 캐릭터 위에서 클릭 통과가 꺼지면 SnippingTool이 마우스를 뺏겨
-    // 캡처보드/토스트가 안 뜸 → 이 동안은 항상 통과 유지
-    if IN_REGION_SELECT.load(Ordering::SeqCst) {
-        let overlay = app
-            .get_webview_window("overlay")
-            .ok_or_else(|| "overlay window missing".to_string())?;
-        let prev = CLICK_THROUGH.swap(1, Ordering::SeqCst);
-        if prev != 1 {
-            overlay
-                .set_ignore_cursor_events(true)
-                .map_err(|e| e.to_string())?;
-        }
-        return Ok(());
-    }
-    let next = if enabled { 1 } else { 0 };
-    let prev = CLICK_THROUGH.swap(next, Ordering::SeqCst);
-    if prev == next {
-        return Ok(());
-    }
     let overlay = app
         .get_webview_window("overlay")
         .ok_or_else(|| "overlay window missing".to_string())?;
-    overlay
-        .set_ignore_cursor_events(enabled)
-        .map_err(|e| e.to_string())
+
+    // 영역 선택 중 캐릭터 위에서 클릭 통과가 꺼지면 SnippingTool이 마우스를 뺏겨
+    // 캡처보드/토스트가 안 뜸 → 이 동안은 항상 통과 유지
+    let enabled = if IN_REGION_SELECT.load(Ordering::SeqCst) {
+        true
+    } else {
+        enabled
+    };
+
+    let next = if enabled { 1 } else { 0 };
+    let prev = CLICK_THROUGH.swap(next, Ordering::SeqCst);
+    if prev != next {
+        overlay
+            .set_ignore_cursor_events(enabled)
+            .map_err(|e| e.to_string())?;
+    }
+    // ignore_cursor 전환이 z-order를 떨어뜨릴 수 있어 매번 최상단 재적용
+    if YIELD_STATE.load(Ordering::SeqCst) == 0 && OVERLAY_USER_VISIBLE.load(Ordering::SeqCst) {
+        let _ = overlay.set_always_on_top(true);
+        promote_overlay_zorder(&overlay);
+    }
+    Ok(())
 }
 
 #[tauri::command]
 fn show_settings(app: AppHandle) -> Result<(), String> {
-    // 전체화면 alwaysOnTop 오버레이가 설정 창을 가리지 않게
-    if let Some(overlay) = app.get_webview_window("overlay") {
-        let _ = overlay.set_always_on_top(false);
-    }
+    // 오버레이 alwaysOnTop은 유지 — 끄면 다른 일반 앱에 가려짐.
+    // 설정 창도 alwaysOnTop + focus로 오버레이 위에 올림.
 
     let created = app.get_webview_window("settings").is_none();
     let win = match app.get_webview_window("settings") {
@@ -90,6 +88,8 @@ fn show_settings(app: AppHandle) -> Result<(), String> {
     let _ = win.set_always_on_top(true);
     win.show().map_err(|e| e.to_string())?;
     win.set_focus().map_err(|e| e.to_string())?;
+    // 설정 연 뒤에도 오버레이 topmost 스타일 유지
+    restore_overlay_topmost(&app);
     Ok(())
 }
 
@@ -102,6 +102,7 @@ fn restore_overlay_topmost(app: &AppHandle) {
     }
     if let Some(overlay) = app.get_webview_window("overlay") {
         let _ = overlay.set_always_on_top(true);
+        promote_overlay_zorder(&overlay);
     }
 }
 
@@ -131,9 +132,7 @@ fn toggle_overlay(app: AppHandle, visible: bool) -> Result<(), String> {
         .ok_or_else(|| "overlay window missing".to_string())?;
     if visible {
         if YIELD_STATE.load(Ordering::SeqCst) == 0 {
-            overlay.show().map_err(|e| e.to_string())?;
-            let _ = overlay.set_always_on_top(true);
-            let _ = overlay.set_ignore_cursor_events(true);
+            restore_overlay_foreground(&overlay);
         }
     } else {
         overlay.hide().map_err(|e| e.to_string())?;
@@ -167,6 +166,7 @@ fn setup_overlay(app: &AppHandle) -> Result<(), String> {
     }
 
     let _ = overlay.set_always_on_top(true);
+    promote_overlay_zorder(&overlay);
     let _ = overlay.set_ignore_cursor_events(true);
     Ok(())
 }
@@ -228,20 +228,25 @@ fn apply_capture_yield(app: &AppHandle, should_yield: bool) {
 
     if should_yield {
         IN_REGION_SELECT.store(false, Ordering::SeqCst);
-        // 전체화면 alwaysOnTop은 토스트/캡처보드를 가리므로 숨김 + z-order 강등
+        // hide만으로 토스트 확보 — HWND_BOTTOM 강등은 복구 후에도 창이 뒤로 남는 원인
         let _ = overlay.set_always_on_top(false);
-        demote_overlay_zorder(&overlay);
         let _ = overlay.hide();
     } else if OVERLAY_USER_VISIBLE.load(Ordering::SeqCst) {
-        let _ = overlay.show();
-        let _ = overlay.set_always_on_top(true);
-        let _ = overlay.set_ignore_cursor_events(true);
-        CLICK_THROUGH.store(255, Ordering::SeqCst);
+        restore_overlay_foreground(&overlay);
     }
 }
 
+/// alwaysOnTop + TOPMOST로 다른 앱 뒤에 깔리지 않게
+fn restore_overlay_foreground(overlay: &tauri::WebviewWindow) {
+    let _ = overlay.show();
+    let _ = overlay.set_always_on_top(true);
+    promote_overlay_zorder(overlay);
+    let _ = overlay.set_ignore_cursor_events(true);
+    CLICK_THROUGH.store(255, Ordering::SeqCst);
+}
+
 #[cfg(windows)]
-fn demote_overlay_zorder(overlay: &tauri::WebviewWindow) {
+fn promote_overlay_zorder(overlay: &tauri::WebviewWindow) {
     #[link(name = "user32")]
     extern "system" {
         fn SetWindowPos(
@@ -253,34 +258,42 @@ fn demote_overlay_zorder(overlay: &tauri::WebviewWindow) {
             cy: i32,
             flags: u32,
         ) -> i32;
+        fn GetWindowLongW(hwnd: isize, index: i32) -> i32;
+        fn SetWindowLongW(hwnd: isize, index: i32, new_long: i32) -> i32;
     }
-    const HWND_BOTTOM: isize = 1;
+    const HWND_TOPMOST: isize = -1;
+    const GWL_EXSTYLE: i32 = -20;
+    const WS_EX_TOPMOST: i32 = 0x0000_0008;
     const SWP_NOMOVE: u32 = 0x0002;
     const SWP_NOSIZE: u32 = 0x0001;
     const SWP_NOACTIVATE: u32 = 0x0010;
+    const SWP_SHOWWINDOW: u32 = 0x0040;
+    const SWP_FRAMECHANGED: u32 = 0x0020;
 
     let Ok(hwnd) = overlay.hwnd() else {
         return;
     };
+    let hwnd = hwnd.0 as isize;
     unsafe {
+        let ex = GetWindowLongW(hwnd, GWL_EXSTYLE);
+        SetWindowLongW(hwnd, GWL_EXSTYLE, ex | WS_EX_TOPMOST);
         SetWindowPos(
-            hwnd.0 as isize,
-            HWND_BOTTOM,
+            hwnd,
+            HWND_TOPMOST,
             0,
             0,
             0,
             0,
-            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_FRAMECHANGED,
         );
     }
 }
 
 #[cfg(not(windows))]
-fn demote_overlay_zorder(_overlay: &tauri::WebviewWindow) {}
+fn promote_overlay_zorder(_overlay: &tauri::WebviewWindow) {}
 
 /// 캡처 세션 중 강제 표시 (양보 상태와 무관하게 show + topmost)
 fn force_overlay_visible_for_capture(app: &AppHandle) {
-    // clear_capture_yield 는 호출부에서 새 세션 시작 시에만 수행
     YIELD_STATE.store(0, Ordering::SeqCst);
     IN_REGION_SELECT.store(true, Ordering::SeqCst);
     if !OVERLAY_USER_VISIBLE.load(Ordering::SeqCst) {
@@ -291,6 +304,7 @@ fn force_overlay_visible_for_capture(app: &AppHandle) {
     };
     let _ = overlay.show();
     let _ = overlay.set_always_on_top(true);
+    promote_overlay_zorder(&overlay);
     // SnippingTool이 캐릭터 위 드래그도 받을 수 있게 항상 클릭 통과
     let _ = overlay.set_ignore_cursor_events(true);
     CLICK_THROUGH.store(1, Ordering::SeqCst);
@@ -479,6 +493,7 @@ fn spawn_capture_yield_watcher(app: AppHandle) {
         let mut saw_clipping_host = false;
         /// 토스트 양보 직후 핫키/감지 깜빡임으로 양보가 취소되지 않게
         let mut suppress_select_until: Option<Instant> = None;
+        let mut last_topmost_refresh = Instant::now();
 
         loop {
             let selecting =
@@ -529,6 +544,17 @@ fn spawn_capture_yield_watcher(app: AppHandle) {
                 YIELD_EXHAUSTED.store(false, Ordering::SeqCst);
                 if suppress_select_until.is_some_and(|t| Instant::now() >= t) {
                     suppress_select_until = None;
+                }
+                // 다른 창에 가려지지 않도록 주기적으로 TOPMOST 재적용
+                if OVERLAY_USER_VISIBLE.load(Ordering::SeqCst)
+                    && YIELD_STATE.load(Ordering::SeqCst) == 0
+                    && last_topmost_refresh.elapsed() >= Duration::from_millis(500)
+                {
+                    last_topmost_refresh = Instant::now();
+                    if let Some(overlay) = app.get_webview_window("overlay") {
+                        let _ = overlay.set_always_on_top(true);
+                        promote_overlay_zorder(&overlay);
+                    }
                 }
             }
 
@@ -583,9 +609,7 @@ pub fn run() {
                             OVERLAY_USER_VISIBLE.store(show, Ordering::SeqCst);
                             if show {
                                 if YIELD_STATE.load(Ordering::SeqCst) == 0 {
-                                    let _ = overlay.show();
-                                    let _ = overlay.set_always_on_top(true);
-                                    let _ = overlay.set_ignore_cursor_events(true);
+                                    restore_overlay_foreground(&overlay);
                                 }
                             } else {
                                 let _ = overlay.hide();
