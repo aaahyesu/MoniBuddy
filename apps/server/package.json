@@ -9,6 +9,7 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
+    "@libsql/client": "^0.18.0",
     "@monibuddy/shared": "*",
     "cors": "^2.8.5",
     "esbuild": "^0.25.0",

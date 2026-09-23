@@ -47,7 +47,7 @@ const DATA_DIR = path.resolve(__dirname, "../data");
 const PORT = Number(process.env.PORT ?? 3847);
 
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
-const friends = new FriendStore(DATA_DIR);
+const friends = await FriendStore.create(DATA_DIR);
 
 function sanitizeStatusMessage(raw: unknown): string {
   return String(raw ?? "")
@@ -335,20 +335,20 @@ io.on("connection", (socket) => {
 
   socket.on(
     SocketEvents.PresenceHello,
-    (payload: PresenceHelloPayload, ack?: (r: PresenceHelloAck) => void) => {
+    async (payload: PresenceHelloPayload, ack?: (r: PresenceHelloAck) => void) => {
       try {
         if (!payload?.userId?.trim() || !payload.nickname?.trim() || !payload.character) {
           ack?.({ ok: false, error: "userId, nickname and character required" });
           return;
         }
-        const user = friends.upsertUser({
+        const user = await friends.upsertUser({
           userId: payload.userId.trim().slice(0, 40),
           friendCode: payload.friendCode,
           nickname: payload.nickname,
           character: payload.character,
         });
         friends.setOnline(socket.id, user);
-        const list = friends.listFriends(user.userId);
+        const list = await friends.listFriends(user.userId);
         ack?.({
           ok: true,
           userId: user.userId,
@@ -361,7 +361,7 @@ io.on("connection", (socket) => {
           nickname: user.nickname,
           character: user.character,
         };
-        for (const sid of friends.friendSocketIds(user.userId)) {
+        for (const sid of await friends.friendSocketIdsFor(user.userId)) {
           io.to(sid).emit(SocketEvents.FriendPresence, presence);
         }
       } catch (err) {
@@ -375,90 +375,112 @@ io.on("connection", (socket) => {
 
   socket.on(
     SocketEvents.FriendAdd,
-    (payload: FriendAddPayload, ack?: (r: FriendAddAck) => void) => {
-      const myId = friends.getUserIdBySocket(socket.id);
-      if (!myId) {
-        ack?.({ ok: false, error: "not registered" });
-        return;
-      }
-      const result = friends.addFriend(myId, String(payload?.friendCode ?? ""));
-      ack?.(result);
-      if (result.ok) {
-        const other = friends.getUserByFriendCode(String(payload?.friendCode ?? ""));
-        if (other) {
-          const otherSocket = friends.getPresence(other.userId)?.socketId;
-          if (otherSocket) {
-            io.to(otherSocket).emit(SocketEvents.FriendSync, {
-              friends: friends.listFriends(other.userId),
-            });
-          }
+    async (payload: FriendAddPayload, ack?: (r: FriendAddAck) => void) => {
+      try {
+        const myId = friends.getUserIdBySocket(socket.id);
+        if (!myId) {
+          ack?.({ ok: false, error: "not registered" });
+          return;
         }
-        socket.emit(SocketEvents.FriendSync, { friends: result.friends });
+        const code = String(payload?.friendCode ?? "");
+        const result = await friends.addFriend(myId, code);
+        ack?.(result);
+        if (result.ok) {
+          const other = await friends.getUserByFriendCode(code);
+          if (other) {
+            const otherSocket = friends.getPresence(other.userId)?.socketId;
+            if (otherSocket) {
+              io.to(otherSocket).emit(SocketEvents.FriendSync, {
+                friends: await friends.listFriends(other.userId),
+              });
+            }
+          }
+          socket.emit(SocketEvents.FriendSync, { friends: result.friends });
+        }
+      } catch (err) {
+        ack?.({
+          ok: false,
+          error: err instanceof Error ? err.message : "friend add failed",
+        });
       }
     },
   );
 
   socket.on(
     SocketEvents.FriendRemove,
-    (payload: FriendRemovePayload, ack?: (r: FriendRemoveAck) => void) => {
-      const myId = friends.getUserIdBySocket(socket.id);
-      if (!myId) {
-        ack?.({ ok: false, error: "not registered" });
-        return;
-      }
-      const targetId = String(payload?.userId ?? "");
-      const result = friends.removeFriend(myId, targetId);
-      ack?.(result);
-      if (result.ok) {
-        socket.emit(SocketEvents.FriendSync, { friends: result.friends });
-        const otherSocket = friends.getPresence(targetId)?.socketId;
-        if (otherSocket) {
-          io.to(otherSocket).emit(SocketEvents.FriendSync, {
-            friends: friends.listFriends(targetId),
-          });
+    async (payload: FriendRemovePayload, ack?: (r: FriendRemoveAck) => void) => {
+      try {
+        const myId = friends.getUserIdBySocket(socket.id);
+        if (!myId) {
+          ack?.({ ok: false, error: "not registered" });
+          return;
         }
+        const targetId = String(payload?.userId ?? "");
+        const result = await friends.removeFriend(myId, targetId);
+        ack?.(result);
+        if (result.ok) {
+          socket.emit(SocketEvents.FriendSync, { friends: result.friends });
+          const otherSocket = friends.getPresence(targetId)?.socketId;
+          if (otherSocket) {
+            io.to(otherSocket).emit(SocketEvents.FriendSync, {
+              friends: await friends.listFriends(targetId),
+            });
+          }
+        }
+      } catch (err) {
+        ack?.({
+          ok: false,
+          error: err instanceof Error ? err.message : "friend remove failed",
+        });
       }
     },
   );
 
   socket.on(
     SocketEvents.FriendInvite,
-    (payload: FriendInvitePayload, ack?: (r: FriendInviteAck) => void) => {
-      const myId = friends.getUserIdBySocket(socket.id);
-      if (!myId) {
-        ack?.({ ok: false, error: "not registered" });
-        return;
+    async (payload: FriendInvitePayload, ack?: (r: FriendInviteAck) => void) => {
+      try {
+        const myId = friends.getUserIdBySocket(socket.id);
+        if (!myId) {
+          ack?.({ ok: false, error: "not registered" });
+          return;
+        }
+        const me = await friends.getUser(myId);
+        const toUserId = String(payload?.toUserId ?? "");
+        const roomCode = String(payload?.roomCode ?? "")
+          .trim()
+          .toUpperCase();
+        if (!me || !toUserId || !roomCode) {
+          ack?.({ ok: false, error: "toUserId and roomCode required" });
+          return;
+        }
+        if (!me.friends.includes(toUserId)) {
+          ack?.({ ok: false, error: "not friends" });
+          return;
+        }
+        if (!rooms.has(roomCode)) {
+          ack?.({ ok: false, error: "room not found — create or join a room first" });
+          return;
+        }
+        const target = friends.getPresence(toUserId);
+        if (!target) {
+          ack?.({ ok: false, error: "friend is offline" });
+          return;
+        }
+        const invite: FriendInviteRecvPayload = {
+          fromUserId: myId,
+          fromNickname: me.nickname,
+          roomCode,
+          at: Date.now(),
+        };
+        io.to(target.socketId).emit(SocketEvents.FriendInviteRecv, invite);
+        ack?.({ ok: true });
+      } catch (err) {
+        ack?.({
+          ok: false,
+          error: err instanceof Error ? err.message : "invite failed",
+        });
       }
-      const me = friends.getUser(myId);
-      const toUserId = String(payload?.toUserId ?? "");
-      const roomCode = String(payload?.roomCode ?? "")
-        .trim()
-        .toUpperCase();
-      if (!me || !toUserId || !roomCode) {
-        ack?.({ ok: false, error: "toUserId and roomCode required" });
-        return;
-      }
-      if (!me.friends.includes(toUserId)) {
-        ack?.({ ok: false, error: "not friends" });
-        return;
-      }
-      if (!rooms.has(roomCode)) {
-        ack?.({ ok: false, error: "room not found — create or join a room first" });
-        return;
-      }
-      const target = friends.getPresence(toUserId);
-      if (!target) {
-        ack?.({ ok: false, error: "friend is offline" });
-        return;
-      }
-      const invite: FriendInviteRecvPayload = {
-        fromUserId: myId,
-        fromNickname: me.nickname,
-        roomCode,
-        at: Date.now(),
-      };
-      io.to(target.socketId).emit(SocketEvents.FriendInviteRecv, invite);
-      ack?.({ ok: true });
     },
   );
 
@@ -470,9 +492,11 @@ io.on("connection", (socket) => {
         userId: offlineUserId,
         online: false,
       };
-      for (const sid of friends.friendSocketIds(offlineUserId)) {
-        io.to(sid).emit(SocketEvents.FriendPresence, presence);
-      }
+      void friends.friendSocketIdsFor(offlineUserId).then((sids) => {
+        for (const sid of sids) {
+          io.to(sid).emit(SocketEvents.FriendPresence, presence);
+        }
+      });
     }
   });
 });
