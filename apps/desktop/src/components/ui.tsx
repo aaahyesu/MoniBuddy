@@ -33,13 +33,15 @@ export function Brand({
 }) {
   return (
     <div className="grid gap-2 text-center">
-      <div className="pixel-title">{title}</div>
+      <div className="relative inline-block justify-self-center text-[clamp(1.4rem,4vw,1.85rem)] font-bold uppercase tracking-[0.06em] text-white [text-shadow:0_3px_0_rgba(255,255,255,0.35),0_6px_0_rgba(255,255,255,0.18),0_9px_0_rgba(255,255,255,0.08)]">
+        {title}
+      </div>
       {subtitle ? (
         <p className="m-0 text-[0.78rem] leading-relaxed tracking-wide text-mute">
           {subtitle}
         </p>
       ) : null}
-      <div className="pixel-divider mt-1" />
+      <div className="mt-1 h-px w-full bg-white opacity-85" />
     </div>
   );
 }

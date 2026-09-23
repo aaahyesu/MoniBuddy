@@ -2,6 +2,7 @@ node_modules/
 dist/
 target/
 uploads/
+apps/server/data/
 *.log
 .DS_Store
 .env

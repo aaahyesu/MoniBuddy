@@ -20,6 +20,8 @@ import {
   type BuddyDef,
   type BuddyManifest,
 } from "../lib/defaultBuddies";
+import { Btn, inputClass } from "./ui";
+import { cn } from "../lib/cn";
 
 type Props = {
   character: Character;
@@ -70,7 +72,9 @@ export function CharacterEditor({
     [character],
   );
 
-  function updateParts(patch: Partial<PartsCharacter["layers"]> & { palette?: string }) {
+  function updateParts(
+    patch: Partial<PartsCharacter["layers"]> & { palette?: string },
+  ) {
     const base: PartsCharacter =
       character.kind === "parts"
         ? character
@@ -108,14 +112,16 @@ export function CharacterEditor({
     setMode("buddy");
   }
 
-  // sync growth from progress store
   useEffect(() => {
     const sync = () => {
       if (character.kind !== "buddy") return;
       const def = buddyMap.get(character.id);
       const xp = getXp(character.id);
       const next = applyGrowthToBuddy(character, def, xp);
-      if (next.stage !== character.stage || Math.abs(next.scale - character.scale) > 0.001) {
+      if (
+        next.stage !== character.stage ||
+        Math.abs(next.scale - character.scale) > 0.001
+      ) {
         onChange(next);
       }
     };
@@ -140,7 +146,9 @@ export function CharacterEditor({
 
     const dims = await readImageSize(file);
     if (Math.max(dims.w, dims.h) > UPLOAD_MAX_EDGE) {
-      setError(`긴 변은 ${UPLOAD_MAX_EDGE}px 이하여야 합니다. (현재 ${dims.w}×${dims.h})`);
+      setError(
+        `긴 변은 ${UPLOAD_MAX_EDGE}px 이하여야 합니다. (현재 ${dims.w}×${dims.h})`,
+      );
       return;
     }
 
@@ -182,12 +190,14 @@ export function CharacterEditor({
   const xp = character.kind === "buddy" ? getXp(character.id) : 0;
   const stage = character.kind === "buddy" ? character.stage : 0;
   const nextThreshold =
-    stage >= 2 ? null : GROWTH_XP_THRESHOLDS[stageFromXp(xp) + 1] ?? GROWTH_XP_THRESHOLDS[2];
+    stage >= 2
+      ? null
+      : (GROWTH_XP_THRESHOLDS[stageFromXp(xp) + 1] ?? GROWTH_XP_THRESHOLDS[2]);
 
   return (
-    <div className="row" style={{ alignItems: "flex-start" }}>
+    <div className="flex flex-wrap items-start gap-3">
       <div>
-        <div className="preview">
+        <div className="grid size-40 place-items-center rounded-[14px] border border-white/20 bg-buddy">
           <CharacterView
             character={character}
             serverUrl={serverUrl}
@@ -196,58 +206,66 @@ export function CharacterEditor({
           />
         </div>
         {character.kind === "buddy" && activeBuddyDef?.grows !== false && (
-          <div className="growth-box">
-            <div className="muted">
+          <div className="mt-2 max-w-40 grid gap-1">
+            <div className="text-[0.9rem] text-mute">
               성장 {stage}/2 · XP {xp}
               {nextThreshold != null ? ` → ${nextThreshold}` : " (최대)"}
             </div>
-            <div className="quest-bar">
+            <div className="h-2 overflow-hidden rounded-full bg-white/12">
               <div
+                className="h-full bg-gradient-to-r from-[#c8ced8] to-[#f0f2f5]"
                 style={{
                   width: `${Math.min(100, Math.round((xp / GROWTH_XP_THRESHOLDS[2]) * 100))}%`,
                 }}
               />
             </div>
-            <div className="muted">채팅을 보내면 성장합니다.</div>
+            <div className="text-[0.9rem] text-mute">채팅을 보내면 성장합니다.</div>
           </div>
         )}
-        <div className="row" style={{ marginTop: "0.6rem" }}>
+        <div className="mt-2.5 flex flex-wrap items-center gap-3">
           {!simple && (
-            <button
+            <Btn
               type="button"
-              className={mode === "parts" ? "primary" : "ghost"}
+              variant={mode === "parts" ? "primary" : "ghost"}
               onClick={() => setMode("parts")}
             >
               파츠
-            </button>
+            </Btn>
           )}
-          <button
+          <Btn
             type="button"
-            className={mode === "buddy" ? "primary" : "ghost"}
+            variant={mode === "buddy" ? "primary" : "ghost"}
             onClick={() => setMode("buddy")}
           >
             GIF
-          </button>
+          </Btn>
           {!simple && (
-            <button
+            <Btn
               type="button"
-              className={mode === "upload" ? "primary" : "ghost"}
+              variant={mode === "upload" ? "primary" : "ghost"}
               onClick={() => setMode("upload")}
             >
               업로드
-            </button>
+            </Btn>
           )}
         </div>
       </div>
 
-      <div style={{ flex: 1, display: "grid", gap: "0.55rem" }}>
+      <div className="grid min-w-[12rem] flex-1 gap-2.5">
         {mode === "parts" && (
           <>
             {(["head", "body", "outfit", "accessory"] as const).map((layer) => (
-              <label key={layer}>
+              <label
+                key={layer}
+                className="grid gap-1.5 text-[0.8rem] text-mute"
+              >
                 {layer}
                 <select
-                  value={parts?.layers[layer] ?? (layer === "accessory" ? "none" : "")}
+                  className={inputClass}
+                  value={
+                    parts?.layers[layer] ??
+                    (layer === "accessory" ? "none" : "")
+                  }
                   onChange={(e) => updateParts({ [layer]: e.target.value })}
                 >
                   {PART_CATALOG[layer].map((id) => (
@@ -258,10 +276,11 @@ export function CharacterEditor({
                 </select>
               </label>
             ))}
-            <label>
+            <label className="grid gap-1.5 text-[0.8rem] text-mute">
               팔레트
               <input
                 type="color"
+                className="h-10 w-full cursor-pointer border border-white/40 bg-black/40 p-1"
                 value={parts?.palette ?? "#6ec6ff"}
                 onChange={(e) => updateParts({ palette: e.target.value })}
               />
@@ -271,22 +290,27 @@ export function CharacterEditor({
 
         {mode === "buddy" && (
           <>
-            <p className="muted" style={{ margin: 0 }}>
+            <p className="m-0 text-[0.9rem] text-mute">
               잠긴 항목은 퀘스트로 해금됩니다. 파일이 없는 보상은 잠김으로 표시됩니다.
             </p>
-            <div className="row">
+            <div className="flex flex-wrap items-center gap-3">
               {manifest.buddies.map((b) => {
                 const unlocked = isUnlocked(b.id);
                 const ready = b.fileReady !== false;
                 const available = unlocked && ready;
-                const selected = character.kind === "buddy" && character.id === b.id;
+                const selected =
+                  character.kind === "buddy" && character.id === b.id;
                 return (
                   <button
                     key={b.id}
                     type="button"
-                    className={`buddy-pick${selected ? " primary" : " ghost"}${
-                      available ? "" : " locked"
-                    }`}
+                    className={cn(
+                      "grid min-w-[72px] justify-items-center gap-1 border px-1.5 py-1.5 transition",
+                      selected
+                        ? "border-white bg-white/15"
+                        : "border-white/30 bg-transparent hover:border-white/60",
+                      !available && "opacity-85",
+                    )}
                     onClick={() => selectBuddy(b)}
                     title={available ? b.label ?? b.id : "잠김"}
                   >
@@ -296,15 +320,14 @@ export function CharacterEditor({
                         alt={b.id}
                         width={48}
                         height={48}
-                        style={{
-                          imageRendering: "auto",
-                          display: "block",
-                        }}
+                        className="block"
                       />
                     ) : (
-                      <span className="buddy-placeholder">🔒</span>
+                      <span className="grid size-12 place-items-center rounded-lg bg-buddy font-bold text-[#6a7080]">
+                        🔒
+                      </span>
                     )}
-                    <span className="buddy-cap">
+                    <span className="max-w-[88px] truncate text-center text-[0.72rem] text-mute">
                       {available ? b.label ?? b.id : "잠김"}
                     </span>
                   </button>
@@ -316,23 +339,24 @@ export function CharacterEditor({
 
         {mode === "upload" && (
           <>
-            <p className="muted" style={{ margin: 0 }}>
+            <p className="m-0 text-[0.9rem] text-mute">
               PNG ≤128KB · GIF ≤512KB · 긴 변 ≤{UPLOAD_MAX_EDGE}px
             </p>
             <input
               type="file"
               accept="image/png,image/gif"
               disabled={busy}
+              className="text-[0.85rem] text-mute file:mr-3 file:border file:border-white/50 file:bg-transparent file:px-3 file:py-1.5 file:text-white"
               onChange={(e) => void onFile(e.target.files?.[0] ?? null)}
             />
             {character.kind === "upload" && (
-              <p className="muted" style={{ margin: 0 }}>
+              <p className="m-0 text-[0.9rem] text-mute">
                 imageId: {character.imageId} ({character.mime})
               </p>
             )}
           </>
         )}
-        {error && <p className="error">{error}</p>}
+        {error && <p className="m-0 text-[0.85rem] text-danger">{error}</p>}
       </div>
     </div>
   );

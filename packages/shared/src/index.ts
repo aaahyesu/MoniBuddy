@@ -2,6 +2,7 @@ export const MAX_ROOM_MEMBERS = 8;
 export const MAX_CHAT_LENGTH = 80;
 export const BUBBLE_TTL_MS = 2000;
 export const INVITE_CODE_LENGTH = 6;
+export const FRIEND_CODE_LENGTH = 6;
 export const PNG_MAX_BYTES = 128 * 1024;
 export const GIF_MAX_BYTES = 512 * 1024;
 export const UPLOAD_MAX_EDGE = 128;
@@ -108,7 +109,72 @@ export const SocketEvents = {
   ChatBroadcast: "chat:broadcast",
   CharState: "char:state",
   MemberProfile: "member:profile",
+  PresenceHello: "presence:hello",
+  FriendAdd: "friend:add",
+  FriendRemove: "friend:remove",
+  FriendSync: "friend:sync",
+  FriendInvite: "friend:invite",
+  FriendInviteRecv: "friend:invite-recv",
+  FriendPresence: "friend:presence",
 } as const;
+
+export type FriendInfo = {
+  userId: string;
+  friendCode: string;
+  nickname: string;
+  character: Character;
+  online: boolean;
+};
+
+export type PresenceHelloPayload = {
+  userId: string;
+  friendCode: string;
+  nickname: string;
+  character: Character;
+};
+
+export type PresenceHelloAck =
+  | { ok: true; userId: string; friendCode: string; friends: FriendInfo[] }
+  | { ok: false; error: string };
+
+export type FriendAddPayload = {
+  friendCode: string;
+};
+
+export type FriendAddAck =
+  | { ok: true; friends: FriendInfo[] }
+  | { ok: false; error: string };
+
+export type FriendRemovePayload = {
+  userId: string;
+};
+
+export type FriendRemoveAck =
+  | { ok: true; friends: FriendInfo[] }
+  | { ok: false; error: string };
+
+export type FriendInvitePayload = {
+  toUserId: string;
+  roomCode: string;
+};
+
+export type FriendInviteAck =
+  | { ok: true }
+  | { ok: false; error: string };
+
+export type FriendInviteRecvPayload = {
+  fromUserId: string;
+  fromNickname: string;
+  roomCode: string;
+  at: number;
+};
+
+export type FriendPresencePayload = {
+  userId: string;
+  online: boolean;
+  nickname?: string;
+  character?: Character;
+};
 
 export type RoomCreatePayload = {
   nickname: string;
@@ -181,4 +247,8 @@ export function createInviteCode(length = INVITE_CODE_LENGTH): string {
     out += alphabet[Math.floor(Math.random() * alphabet.length)];
   }
   return out;
+}
+
+export function createFriendCode(length = FRIEND_CODE_LENGTH): string {
+  return createInviteCode(length);
 }

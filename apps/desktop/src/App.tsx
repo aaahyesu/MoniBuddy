@@ -12,6 +12,10 @@ import { useLocalProfile } from "./hooks/useLocalProfile";
 import { useProgress } from "./hooks/useProgress";
 import { useRoomSocket } from "./hooks/useRoomSocket";
 import { loadBuddyManifest } from "./lib/defaultBuddies";
+import {
+  readDeviceIdentity,
+  writeDeviceIdentity,
+} from "./lib/deviceIdentity";
 import { applyOverlayHotkey } from "./lib/overlayHotkey";
 import { persistActiveRoom } from "./overlay/OverlayApp";
 import { invokeSafe, isTauri } from "./lib/tauri";
@@ -47,6 +51,7 @@ export function App() {
   const [screen, setScreen] = useState<Screen | null>(null);
   const [buddyTab, setBuddyTab] = useState<"character" | "quests">("character");
   const [hotkeyError, setHotkeyError] = useState("");
+  const [device, setDevice] = useState(() => readDeviceIdentity());
 
   useEffect(() => {
     if (!ready || !isTauri()) return;
@@ -100,11 +105,22 @@ export function App() {
 
   const room = useRoomSocket({
     serverUrl: profile.serverUrl,
-    nickname: profile.nickname,
+    nickname: profile.nickname || "Guest",
     character: profile.character,
     statusMessage: profile.statusMessage,
     forcePolling: profile.forcePolling,
+    userId: device.userId,
+    friendCode: device.friendCode,
   });
+
+  // 서버가 배정한 friendCode를 기기에 저장
+  useEffect(() => {
+    if (!room.resolvedFriendCode) return;
+    if (room.resolvedFriendCode === device.friendCode) return;
+    const next = { ...device, friendCode: room.resolvedFriendCode };
+    writeDeviceIdentity(next);
+    setDevice(next);
+  }, [room.resolvedFriendCode, device]);
 
   useEffect(() => {
     persistActiveRoom(room.roomCode);
@@ -385,6 +401,10 @@ export function App() {
         error={room.error}
         forcePolling={profile.forcePolling}
         overlayHotkey={profile.overlayHotkey}
+        myFriendCode={room.resolvedFriendCode || device.friendCode}
+        friends={room.friends}
+        friendError={room.friendError}
+        pendingInvite={room.pendingInvite}
         onEditProfile={() => setScreen("profile")}
         onOpenRoomInfo={() => setScreen("room")}
         onShowOverlay={
@@ -392,6 +412,28 @@ export function App() {
             ? () => void invokeSafe("toggle_overlay", { visible: true })
             : undefined
         }
+        onCopyFriendCode={() => {
+          const code = room.resolvedFriendCode || device.friendCode;
+          void navigator.clipboard?.writeText(code);
+        }}
+        onAddFriend={(code) => {
+          void room.addFriend(code);
+        }}
+        onRemoveFriend={(userId) => {
+          void room.removeFriend(userId);
+        }}
+        onInviteFriend={(userId) => {
+          void room.inviteFriend(userId);
+        }}
+        onAcceptInvite={() => {
+          const invite = room.pendingInvite;
+          if (!invite) return;
+          room.setPendingInvite(null);
+          void room.joinRoom(invite.roomCode).then((ok) => {
+            if (ok) setScreen("room");
+          });
+        }}
+        onDismissInvite={() => room.setPendingInvite(null)}
       />
       <div className="fixed bottom-3 right-3 flex gap-2 opacity-75">
         {!isTauri() && (

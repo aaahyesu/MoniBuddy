@@ -12,12 +12,22 @@ import {
   CharStatePayload,
   ChatMessage,
   ChatSendPayload,
+  FriendAddAck,
+  FriendAddPayload,
+  FriendInviteAck,
+  FriendInvitePayload,
+  FriendInviteRecvPayload,
+  FriendPresencePayload,
+  FriendRemoveAck,
+  FriendRemovePayload,
   GIF_MAX_BYTES,
   MAX_CHAT_LENGTH,
   MAX_ROOM_MEMBERS,
   Member,
   PNG_MAX_BYTES,
   MemberProfilePayload,
+  PresenceHelloAck,
+  PresenceHelloPayload,
   RoomCreateAck,
   RoomCreatePayload,
   RoomJoinAck,
@@ -29,12 +39,15 @@ import {
   defaultCharState,
 } from "@monibuddy/shared";
 import { mountDesktopUpdaterProxy } from "./desktopUpdater";
+import { FriendStore } from "./friendStore";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const UPLOAD_DIR = path.resolve(__dirname, "../uploads");
+const DATA_DIR = path.resolve(__dirname, "../data");
 const PORT = Number(process.env.PORT ?? 3847);
 
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+const friends = new FriendStore(DATA_DIR);
 
 function sanitizeStatusMessage(raw: unknown): string {
   return String(raw ?? "")
@@ -50,6 +63,28 @@ type Room = {
 
 const rooms = new Map<string, Room>();
 const socketRoom = new Map<string, string>();
+/** 끊김 후 빈 방 유지 (클라이언트 재입장 여유). 의도적 퇴장이면 즉시 삭제 */
+const EMPTY_ROOM_GRACE_MS = 45_000;
+const emptyRoomTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+function cancelEmptyRoomTimer(code: string) {
+  const t = emptyRoomTimers.get(code);
+  if (!t) return;
+  clearTimeout(t);
+  emptyRoomTimers.delete(code);
+}
+
+function scheduleEmptyRoomExpiry(code: string) {
+  cancelEmptyRoomTimer(code);
+  const timer = setTimeout(() => {
+    emptyRoomTimers.delete(code);
+    const room = rooms.get(code);
+    if (room && room.members.size === 0) {
+      rooms.delete(code);
+    }
+  }, EMPTY_ROOM_GRACE_MS);
+  emptyRoomTimers.set(code, timer);
+}
 
 const app = express();
 app.use(cors());
@@ -139,7 +174,7 @@ function broadcastSync(room: Room) {
   io.to(room.code).emit(SocketEvents.MemberSync, snapshot(room));
 }
 
-function leaveSocket(socketId: string) {
+function leaveSocket(socketId: string, opts?: { intentional?: boolean }) {
   const code = socketRoom.get(socketId);
   if (!code) return;
   const room = rooms.get(code);
@@ -151,7 +186,13 @@ function leaveSocket(socketId: string) {
   }
   socketRoom.delete(socketId);
   if (room.members.size === 0) {
-    rooms.delete(code);
+    if (opts?.intentional) {
+      cancelEmptyRoomTimer(code);
+      rooms.delete(code);
+    } else {
+      // 네트워크 끊김 — 잠시 빈 방으로 남겨 자동 재입장 허용
+      scheduleEmptyRoomExpiry(code);
+    }
   } else {
     broadcastSync(room);
   }
@@ -184,6 +225,7 @@ io.on("connection", (socket) => {
         socketToMember: new Map([[socket.id, memberId]]),
       };
       rooms.set(code, room);
+      cancelEmptyRoomTimer(code);
       socketRoom.set(socket.id, code);
       void socket.join(code);
       ack?.({ ok: true, code, memberId, room: snapshot(room) });
@@ -222,6 +264,7 @@ io.on("connection", (socket) => {
       };
       room.members.set(memberId, member);
       room.socketToMember.set(socket.id, memberId);
+      cancelEmptyRoomTimer(code);
       socketRoom.set(socket.id, code);
       void socket.join(code);
       ack?.({ ok: true, memberId, room: snapshot(room) });
@@ -232,7 +275,7 @@ io.on("connection", (socket) => {
   });
 
   socket.on(SocketEvents.RoomLeave, () => {
-    leaveSocket(socket.id);
+    leaveSocket(socket.id, { intentional: true });
   });
 
   socket.on(SocketEvents.ChatSend, (payload: ChatSendPayload) => {
@@ -290,8 +333,147 @@ io.on("connection", (socket) => {
     broadcastSync(room);
   });
 
+  socket.on(
+    SocketEvents.PresenceHello,
+    (payload: PresenceHelloPayload, ack?: (r: PresenceHelloAck) => void) => {
+      try {
+        if (!payload?.userId?.trim() || !payload.nickname?.trim() || !payload.character) {
+          ack?.({ ok: false, error: "userId, nickname and character required" });
+          return;
+        }
+        const user = friends.upsertUser({
+          userId: payload.userId.trim().slice(0, 40),
+          friendCode: payload.friendCode,
+          nickname: payload.nickname,
+          character: payload.character,
+        });
+        friends.setOnline(socket.id, user);
+        const list = friends.listFriends(user.userId);
+        ack?.({
+          ok: true,
+          userId: user.userId,
+          friendCode: user.friendCode,
+          friends: list,
+        });
+        const presence: FriendPresencePayload = {
+          userId: user.userId,
+          online: true,
+          nickname: user.nickname,
+          character: user.character,
+        };
+        for (const sid of friends.friendSocketIds(user.userId)) {
+          io.to(sid).emit(SocketEvents.FriendPresence, presence);
+        }
+      } catch (err) {
+        ack?.({
+          ok: false,
+          error: err instanceof Error ? err.message : "presence hello failed",
+        });
+      }
+    },
+  );
+
+  socket.on(
+    SocketEvents.FriendAdd,
+    (payload: FriendAddPayload, ack?: (r: FriendAddAck) => void) => {
+      const myId = friends.getUserIdBySocket(socket.id);
+      if (!myId) {
+        ack?.({ ok: false, error: "not registered" });
+        return;
+      }
+      const result = friends.addFriend(myId, String(payload?.friendCode ?? ""));
+      ack?.(result);
+      if (result.ok) {
+        const other = friends.getUserByFriendCode(String(payload?.friendCode ?? ""));
+        if (other) {
+          const otherSocket = friends.getPresence(other.userId)?.socketId;
+          if (otherSocket) {
+            io.to(otherSocket).emit(SocketEvents.FriendSync, {
+              friends: friends.listFriends(other.userId),
+            });
+          }
+        }
+        socket.emit(SocketEvents.FriendSync, { friends: result.friends });
+      }
+    },
+  );
+
+  socket.on(
+    SocketEvents.FriendRemove,
+    (payload: FriendRemovePayload, ack?: (r: FriendRemoveAck) => void) => {
+      const myId = friends.getUserIdBySocket(socket.id);
+      if (!myId) {
+        ack?.({ ok: false, error: "not registered" });
+        return;
+      }
+      const targetId = String(payload?.userId ?? "");
+      const result = friends.removeFriend(myId, targetId);
+      ack?.(result);
+      if (result.ok) {
+        socket.emit(SocketEvents.FriendSync, { friends: result.friends });
+        const otherSocket = friends.getPresence(targetId)?.socketId;
+        if (otherSocket) {
+          io.to(otherSocket).emit(SocketEvents.FriendSync, {
+            friends: friends.listFriends(targetId),
+          });
+        }
+      }
+    },
+  );
+
+  socket.on(
+    SocketEvents.FriendInvite,
+    (payload: FriendInvitePayload, ack?: (r: FriendInviteAck) => void) => {
+      const myId = friends.getUserIdBySocket(socket.id);
+      if (!myId) {
+        ack?.({ ok: false, error: "not registered" });
+        return;
+      }
+      const me = friends.getUser(myId);
+      const toUserId = String(payload?.toUserId ?? "");
+      const roomCode = String(payload?.roomCode ?? "")
+        .trim()
+        .toUpperCase();
+      if (!me || !toUserId || !roomCode) {
+        ack?.({ ok: false, error: "toUserId and roomCode required" });
+        return;
+      }
+      if (!me.friends.includes(toUserId)) {
+        ack?.({ ok: false, error: "not friends" });
+        return;
+      }
+      if (!rooms.has(roomCode)) {
+        ack?.({ ok: false, error: "room not found — create or join a room first" });
+        return;
+      }
+      const target = friends.getPresence(toUserId);
+      if (!target) {
+        ack?.({ ok: false, error: "friend is offline" });
+        return;
+      }
+      const invite: FriendInviteRecvPayload = {
+        fromUserId: myId,
+        fromNickname: me.nickname,
+        roomCode,
+        at: Date.now(),
+      };
+      io.to(target.socketId).emit(SocketEvents.FriendInviteRecv, invite);
+      ack?.({ ok: true });
+    },
+  );
+
   socket.on("disconnect", () => {
     leaveSocket(socket.id);
+    const offlineUserId = friends.setOfflineBySocket(socket.id);
+    if (offlineUserId) {
+      const presence: FriendPresencePayload = {
+        userId: offlineUserId,
+        online: false,
+      };
+      for (const sid of friends.friendSocketIds(offlineUserId)) {
+        io.to(sid).emit(SocketEvents.FriendPresence, presence);
+      }
+    }
   });
 });
 
