@@ -145,11 +145,12 @@ function FriendRow({
 }) {
   return (
     <li className="flex items-center gap-3 border border-white/20 bg-black/30 p-2">
-      <div className="relative shrink-0 border border-black/20 bg-buddy p-1">
+      <div className="relative grid size-12 shrink-0 place-items-center overflow-hidden border border-black/20 bg-buddy">
         <CharacterView
           character={friend.character as Character}
           serverUrl={serverUrl}
-          size={40}
+          size={48}
+          fixedSize
         />
         <span
           className={`absolute -right-1 -top-1 size-2.5 rounded-full border border-black ${
@@ -164,7 +165,7 @@ function FriendRow({
           {friend.online ? "온라인" : "오프라인"} · {friend.friendCode}
         </p>
       </div>
-      <div className="flex shrink-0 flex-col gap-1">
+      <div className="flex shrink-0 flex-row items-center gap-1">
         <Btn
           type="button"
           variant="ghost"

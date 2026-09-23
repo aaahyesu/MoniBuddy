@@ -18,6 +18,11 @@ type Props = {
   size?: number;
   facing?: 1 | -1;
   buddyDef?: BuddyDef;
+  /**
+   * 목록/프로필용: size 그대로 고정 박스에 담고 scale·최소표시크기 무시.
+   * object-fit: contain 으로 비율 유지.
+   */
+  fixedSize?: boolean;
 };
 
 const EXT_FALLBACKS: BuddyExt[] = ["gif", "png", "jpg", "jpeg", "webp"];
@@ -28,6 +33,7 @@ export function CharacterView({
   size = BUDDY_MIN_DISPLAY_SIZE,
   facing = 1,
   buddyDef,
+  fixedSize = false,
 }: Props) {
   const [manifestTick, setManifestTick] = useState(0);
 
@@ -43,13 +49,19 @@ export function CharacterView({
     };
   }, [character, buddyDef]);
 
+  const flip = facing === -1 ? "scaleX(-1)" : undefined;
+
   if (character.kind === "buddy") {
     const def = buddyDef ?? peekBuddyDef(character.id);
     const stageDef = resolveBuddyStage(def, character.stage, character.id);
     const fileStem = stageDef.file === "unknown" ? character.id : stageDef.file;
     const src = buddySrcForCharacter(character, def);
-    const base = Math.max(size, BUDDY_MIN_DISPLAY_SIZE);
-    const px = Math.max(52, Math.round(base * (character.scale || 1)));
+    const px = fixedSize
+      ? size
+      : Math.max(
+          52,
+          Math.round(Math.max(size, BUDDY_MIN_DISPLAY_SIZE) * (character.scale || 1)),
+        );
     return (
       <img
         key={src}
@@ -58,13 +70,21 @@ export function CharacterView({
         width={px}
         height={px}
         data-manifest={manifestTick}
-        style={{
-          width: px,
-          height: px,
-          objectFit: "contain",
-          imageRendering: "auto",
-          transform: facing === -1 ? "scaleX(-1)" : undefined,
-        }}
+        className={fixedSize ? "block size-full object-contain" : undefined}
+        style={
+          fixedSize
+            ? {
+                imageRendering: "auto",
+                transform: flip,
+              }
+            : {
+                width: px,
+                height: px,
+                objectFit: "contain",
+                imageRendering: "auto",
+                transform: flip,
+              }
+        }
         draggable={false}
         onError={(e) => {
           const img = e.currentTarget;
@@ -89,13 +109,21 @@ export function CharacterView({
         alt="character"
         width={size}
         height={size}
-        style={{
-          width: size,
-          height: size,
-          objectFit: "contain",
-          imageRendering: "auto",
-          transform: facing === -1 ? "scaleX(-1)" : undefined,
-        }}
+        className={fixedSize ? "block size-full object-contain" : undefined}
+        style={
+          fixedSize
+            ? {
+                imageRendering: "auto",
+                transform: flip,
+              }
+            : {
+                width: size,
+                height: size,
+                objectFit: "contain",
+                imageRendering: "auto",
+                transform: flip,
+              }
+        }
         draggable={false}
       />
     );
