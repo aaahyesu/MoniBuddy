@@ -1,6 +1,7 @@
 import { APP_NAME } from "@monibuddy/shared";
 import { CharacterView } from "./CharacterView";
 import type { Character } from "@monibuddy/shared";
+import { formatHotkeyLabel } from "../lib/overlayHotkey";
 import { Brand, Btn, SectionLabel, ShellCard } from "./ui";
 import { UpdateBanner } from "./UpdateBanner";
 
@@ -13,6 +14,7 @@ type Props = {
   connected: boolean;
   error: string | null;
   forcePolling?: boolean;
+  overlayHotkey?: string;
   onEditProfile: () => void;
   onShowOverlay?: () => void;
   onOpenRoomInfo?: () => void;
@@ -27,6 +29,7 @@ export function RoomLobby({
   connected,
   error,
   forcePolling = true,
+  overlayHotkey = "",
   onEditProfile,
   onShowOverlay,
   onOpenRoomInfo,
@@ -46,7 +49,13 @@ export function RoomLobby({
           <CharacterView character={character} serverUrl={serverUrl} size={80} />
         </div>
         <span className="text-[0.72rem] uppercase tracking-wider text-mute">
-          이름 · 캐릭터 바꾸기
+          이름 · 캐릭터 · 단축키 설정
+        </span>
+        <span className="text-[0.68rem] text-mute">
+          오버레이 단축키:{" "}
+          <span className="text-accent-cyan">
+            {formatHotkeyLabel(overlayHotkey)}
+          </span>
         </span>
       </button>
 

@@ -149,6 +149,13 @@ fn toggle_overlay(app: AppHandle, visible: bool) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn flip_overlay_visibility(app: AppHandle) -> Result<bool, String> {
+    let next = !OVERLAY_USER_VISIBLE.load(Ordering::SeqCst);
+    toggle_overlay(app, next)?;
+    Ok(next)
+}
+
+#[tauri::command]
 fn get_cursor_pos(app: AppHandle) -> Result<(f64, f64), String> {
     let overlay = app
         .get_webview_window("overlay")
@@ -632,6 +639,7 @@ pub fn run() {
             set_click_through,
             show_settings,
             toggle_overlay,
+            flip_overlay_visibility,
             get_cursor_pos,
             is_capture_freeze
         ])
@@ -639,6 +647,9 @@ pub fn run() {
             #[cfg(desktop)]
             app.handle()
                 .plugin(tauri_plugin_updater::Builder::new().build())?;
+            #[cfg(desktop)]
+            app.handle()
+                .plugin(tauri_plugin_global_shortcut::Builder::new().build())?;
 
             setup_overlay(app.handle())?;
             spawn_capture_yield_watcher(app.handle().clone());

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { APP_NAME } from "@monibuddy/shared";
 import { BuddySheet } from "./components/BuddySheet";
+import { HotkeyField } from "./components/HotkeyField";
 import { InRoomView } from "./components/InRoomView";
 import { OnboardingFlow } from "./components/OnboardingFlow";
 import { RoomLobby } from "./components/RoomLobby";
@@ -11,6 +12,7 @@ import { useLocalProfile } from "./hooks/useLocalProfile";
 import { useProgress } from "./hooks/useProgress";
 import { useRoomSocket } from "./hooks/useRoomSocket";
 import { loadBuddyManifest } from "./lib/defaultBuddies";
+import { applyOverlayHotkey } from "./lib/overlayHotkey";
 import { persistActiveRoom } from "./overlay/OverlayApp";
 import { invokeSafe, isTauri } from "./lib/tauri";
 
@@ -35,6 +37,7 @@ export function App() {
     setCharacter,
     setServerUrl,
     setForcePolling,
+    setOverlayHotkey,
     completeOnboarding,
     resetOnboarding,
     ready,
@@ -43,6 +46,20 @@ export function App() {
   const progress = useProgress(freeIds);
   const [screen, setScreen] = useState<Screen | null>(null);
   const [buddyTab, setBuddyTab] = useState<"character" | "quests">("character");
+  const [hotkeyError, setHotkeyError] = useState("");
+
+  useEffect(() => {
+    if (!ready || !isTauri()) return;
+    let cancelled = false;
+    void (async () => {
+      const result = await applyOverlayHotkey(profile.overlayHotkey);
+      if (cancelled) return;
+      setHotkeyError(result.ok ? "" : result.error);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [ready, profile.overlayHotkey]);
 
   useEffect(() => {
     void loadBuddyManifest().then((m) => {
@@ -251,7 +268,7 @@ export function App() {
   if (screen === "profile") {
     return (
       <ShellCard>
-        <Brand title={APP_NAME} subtitle="프로필" />
+        <Brand title={APP_NAME} subtitle="프로필 · 단축키" />
         <UpdateBanner />
         <Field label="닉네임">
           <input
@@ -281,6 +298,25 @@ export function App() {
         <p className="m-0 pl-6 text-[0.72rem] leading-relaxed text-mute">
           WebSocket이 막힌 망에서 켜 두세요. Wi‑Fi에서 더 빠르게 쓰려면 끌 수 있어요.
         </p>
+        {isTauri() ? (
+          <div className="grid gap-2 text-left">
+            <span className="text-[0.72rem] uppercase tracking-wider text-mute">
+              오버레이 단축키
+            </span>
+            <HotkeyField
+              value={profile.overlayHotkey}
+              onChange={(hotkey) => {
+                setHotkeyError("");
+                setOverlayHotkey(hotkey);
+              }}
+            />
+            {hotkeyError ? (
+              <p className="m-0 text-[0.72rem] text-rose-300">
+                등록 실패: {hotkeyError}. 다른 조합을 시도해 보세요.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
         <p className="m-0 text-[0.72rem] leading-relaxed text-mute">
           연결이 안 되면 위 주소가{" "}
           <span className="text-accent-cyan">https://monibuddy-server.onrender.com</span>{" "}
@@ -348,6 +384,7 @@ export function App() {
         connected={room.connected}
         error={room.error}
         forcePolling={profile.forcePolling}
+        overlayHotkey={profile.overlayHotkey}
         onEditProfile={() => setScreen("profile")}
         onOpenRoomInfo={() => setScreen("room")}
         onShowOverlay={
