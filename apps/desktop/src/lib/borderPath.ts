@@ -124,7 +124,7 @@ export function nearestProgressOnBorder(
 
   for (const seg of segs) {
     // Sample densely enough for nearest point on segment
-    const steps = Math.max(8, Math.ceil(seg.length / 12));
+    const steps = Math.max(16, Math.ceil(seg.length / 6));
     for (let i = 0; i <= steps; i += 1) {
       const t = i / steps;
       const p = seg.at(t);
