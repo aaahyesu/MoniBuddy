@@ -13,6 +13,8 @@ export type LocalProfile = {
   statusMessage: string;
   /** 회사망 호환: WebSocket 대신 HTTPS 폴링만 사용 (기본 true) */
   forcePolling: boolean;
+  /** 오버레이 표시/숨김 글로벌 단축키 (빈 문자열이면 미사용) */
+  overlayHotkey: string;
 };
 
 function normalizeServerUrl(saved: string | undefined): string {
@@ -62,6 +64,10 @@ function load(): LocalProfile {
         statusMessage: (parsed.statusMessage || "").slice(0, 40),
         // 기존 설치본은 필드 없음 → 회사망 대비 기본 ON
         forcePolling: parsed.forcePolling !== false,
+        overlayHotkey:
+          typeof parsed.overlayHotkey === "string"
+            ? parsed.overlayHotkey.trim()
+            : "",
       };
     }
   } catch {
@@ -80,6 +86,7 @@ function load(): LocalProfile {
     onboardingDone: false,
     statusMessage: "",
     forcePolling: true,
+    overlayHotkey: "",
   };
 }
 
@@ -145,6 +152,10 @@ export function useLocalProfile() {
     setProfile((p) => ({ ...p, forcePolling }));
   }, []);
 
+  const setOverlayHotkey = useCallback((overlayHotkey: string) => {
+    setProfile((p) => ({ ...p, overlayHotkey: overlayHotkey.trim() }));
+  }, []);
+
   const completeOnboarding = useCallback(() => {
     setProfile((p) => ({
       ...p,
@@ -164,6 +175,7 @@ export function useLocalProfile() {
     setStatusMessage,
     setServerUrl,
     setForcePolling,
+    setOverlayHotkey,
     completeOnboarding,
     resetOnboarding,
     ready,
