@@ -351,8 +351,42 @@ body.overlay-body {
   line-height: 1.35;
 }
 
-.actor.self.dragging {
+.actor.self.dragging,
+.actor.peer.dragging {
   cursor: grabbing;
+}
+
+.actor.peer {
+  cursor: grab;
+}
+
+.actor.pinned {
+  z-index: 60;
+}
+
+.actor.reposition {
+  z-index: 80;
+  filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.45));
+}
+
+.peer-pin-badge {
+  position: absolute;
+  right: 2px;
+  bottom: 6px;
+  font-size: 9px;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: rgba(28, 36, 48, 0.88);
+  color: #f2f4f7;
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: 2;
+}
+
+.actor.edge-top .peer-pin-badge {
+  top: 6px;
+  bottom: auto;
 }
 
 .inroom-tip {
@@ -530,10 +564,21 @@ input::placeholder {
   border: none;
   border-radius: 999px;
   padding: 0.4rem 0.85rem;
-  background: #f0f0f0;
-  color: #111;
+  background: rgba(255, 255, 255, 0.12);
+  color: #eee;
   font-size: 0.8rem;
   font-weight: 600;
+}
+
+.reposition-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.reposition-bar button.reposition-confirm {
+  background: #f0f0f0;
+  color: #111;
 }
 
 .actor {
@@ -543,11 +588,6 @@ input::placeholder {
   transform: translate(-50%, -50%);
   pointer-events: auto;
   z-index: 50;
-}
-
-.actor.self.reposition {
-  z-index: 80;
-  filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.45));
 }
 
 .actor img,
