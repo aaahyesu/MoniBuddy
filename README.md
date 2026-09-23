@@ -122,6 +122,7 @@ MoniBuddy는 화면 가장자리에 작은 캐릭터(버디)를 띄워 두고, �
 | 실시간 | Socket.IO |
 | 기본 포트 | `3847` (`PORT` 환경변수로 변경 가능) |
 | 제한 | 방당 최대 8명, 채팅 최대 80자, 초대코드 6자, 친구 코드 6자 |
+| 친구 저장 | Turso(LibSQL) — `TURSO_DATABASE_URL` / 로컬 `data/friends.db` |
 
 ### 공통 (`packages/shared`)
 
@@ -264,9 +265,15 @@ npm run start -w @monibuddy/server
 ```
 
 4. 환경변수 `PORT`는 Render가 주입하는 값을 사용
-5. 서비스 URL 예: `https://monibuddy-server.onrender.com`  
+5. **친구 영구 저장 (Turso)** — Render 재배포 후에도 친구 목록 유지
+   1. [Turso](https://turso.tech)에서 DB 생성 후 URL·토큰 발급
+   2. Render 서비스 Environment에 등록:
+      - `TURSO_DATABASE_URL` = `libsql://...` (또는 `https://...`)
+      - `TURSO_AUTH_TOKEN` = 토큰
+   3. 미설정 시 로컬/`data/friends.db` 파일로 동작 (Render 무료는 재시작 시 유실)
+6. 서비스 URL 예: `https://monibuddy-server.onrender.com`  
    - GitHub repo **Variable** `MONIBUDDY_SERVER_URL`에 넣으면 설치본 빌드에 반영됩니다
-6. Deploy Hook URL을 GitHub Secret `RENDER_DEPLOY_HOOK`에 넣으면  
+7. Deploy Hook URL을 GitHub Secret `RENDER_DEPLOY_HOOK`에 넣으면  
    `main`에 `apps/server/**` 또는 `packages/shared/**` 변경이 push될 때 자동 재배포
 
 > Render 무료 플랜은 약 15분 동안 트래픽이 없으면 슬립할 수 있습니다.  

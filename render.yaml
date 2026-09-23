@@ -16,3 +16,8 @@ services:
     envVars:
       - key: NODE_VERSION
         value: "20"
+      # Turso (친구 영구 저장) — Dashboard에서 값 설정
+      - key: TURSO_DATABASE_URL
+        sync: false
+      - key: TURSO_AUTH_TOKEN
+        sync: false
