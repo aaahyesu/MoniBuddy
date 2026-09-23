@@ -41,6 +41,8 @@ const CAPTURE_END_DEBOUNCE: Duration = Duration::from_millis(500);
 fn set_click_through(app: AppHandle, enabled: bool) -> Result<(), String> {
     // 캡처 양보 중에는 클릭 통과 상태를 건드리지 않음
     if YIELD_STATE.load(Ordering::SeqCst) != 0 {
+        // 캐시를 무효화해 양보 종료 후 JS 재요청이 실제 적용되도록
+        CLICK_THROUGH.store(255, Ordering::SeqCst);
         return Ok(());
     }
     let overlay = app
