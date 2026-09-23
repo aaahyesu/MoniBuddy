@@ -240,6 +240,8 @@ export function OverlayApp() {
   const panelOpenRef = useRef(false);
   const draggingRef = useRef(false);
   const repositionRef = useRef(false);
+  /** Rust가 click-through를 강제로 바꾼 뒤 JS lastCapture와 어긋날 때 재동기화 */
+  const clickThroughSyncGenRef = useRef(0);
   const sizeRef = useRef(size);
   const moveRef = useRef(move);
   const membersRef = useRef(members);
@@ -594,6 +596,8 @@ export function OverlayApp() {
     if (!isTauri()) return;
     let alive = true;
     let lastCapture: boolean | null = null;
+    let lastSyncGen = -1;
+    let lastForceAt = 0;
     const loop = async () => {
       while (alive) {
         try {
@@ -631,9 +635,17 @@ export function OverlayApp() {
             draggingRef.current ||
             repositionRef.current ||
             (panelOpenRef.current && !repositionRef.current);
-          // 같은 상태를 반복 적용하면 Windows에서 커서가 깜빡임
-          if (lastCapture !== capture) {
+          const syncGen = clickThroughSyncGenRef.current;
+          const now = Date.now();
+          // 패널이 열린 동안은 주기적으로 재적용 — 캡처 양보/복구가
+          // ignore_cursor를 다시 켜도 lastCapture가 같아서 먹통 되던 문제 방지
+          const forceResync =
+            syncGen !== lastSyncGen ||
+            (capture && now - lastForceAt >= 400);
+          if (lastCapture !== capture || forceResync) {
             lastCapture = capture;
+            lastSyncGen = syncGen;
+            lastForceAt = now;
             await invokeSafe("set_click_through", { enabled: !capture });
           }
         } catch {
@@ -816,6 +828,8 @@ export function OverlayApp() {
     setMoveOpen(false);
     setJoinOpen(false);
     setRepositionMode(true);
+    clickThroughSyncGenRef.current += 1;
+    void invokeSafe("set_click_through", { enabled: false });
   };
 
   const restoreRepositionSnapshot = () => {
@@ -880,11 +894,16 @@ export function OverlayApp() {
     setComposeMode("chat");
     if (repositionRef.current) cancelRepositionMode(false);
     else setRepositionMode(false);
+    // ref를 먼저 올려 폴링 루프가 바로 capture로 인식하게
+    panelOpenRef.current = true;
     setPanelOpen(true);
+    clickThroughSyncGenRef.current += 1;
+    void invokeSafe("set_click_through", { enabled: false });
   };
 
   const closePanel = () => {
     if (repositionRef.current) cancelRepositionMode(false);
+    panelOpenRef.current = false;
     setPanelOpen(false);
     setPlusOpen(false);
     setMoveOpen(false);
@@ -893,6 +912,7 @@ export function OverlayApp() {
     setComposeMode("chat");
     setRepositionMode(false);
     setChat("");
+    clickThroughSyncGenRef.current += 1;
     void invokeSafe("set_click_through", { enabled: true });
   };
 
