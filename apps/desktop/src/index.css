@@ -22,6 +22,10 @@
     min-height: 100%;
   }
 
+  * {
+    box-sizing: border-box;
+  }
+
   body.settings-body {
     font-family: var(--font-pixel);
     color: var(--color-ink);
@@ -54,24 +58,3 @@
   }
 }
 
-/* Title drip / glitch like ADRIFT */
-.pixel-title {
-  position: relative;
-  display: inline-block;
-  font-size: clamp(1.4rem, 4vw, 1.85rem);
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: #fff;
-  text-shadow:
-    0 3px 0 rgba(255, 255, 255, 0.35),
-    0 6px 0 rgba(255, 255, 255, 0.18),
-    0 9px 0 rgba(255, 255, 255, 0.08);
-}
-
-.pixel-divider {
-  height: 1px;
-  width: 100%;
-  background: #fff;
-  opacity: 0.85;
-}

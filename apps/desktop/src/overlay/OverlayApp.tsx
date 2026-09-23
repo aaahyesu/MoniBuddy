@@ -5,6 +5,7 @@ import {
   MAX_CHAT_LENGTH,
   type ChatMessage,
   type Character,
+  type CharMotion,
   type Member,
   defaultCharState,
 } from "@monibuddy/shared";
@@ -29,6 +30,9 @@ type MoveSettings = {
   walking: boolean;
   pathMode: PathMode;
 };
+
+const MOTION_IDLE: CharMotion = "idle";
+const MOTION_WALK: CharMotion = "walk";
 
 const ROOM_KEY = "monibuddy.activeRoom.v1";
 const RUNTIME_KEY = "monibuddy.runtime.v1";
@@ -318,7 +322,7 @@ export function OverlayApp() {
             ...(partial.speed != null ? { speed: partial.speed } : {}),
             ...(partial.pathMode != null ? { pathMode: partial.pathMode } : {}),
             ...(partial.walking != null
-              ? { motion: partial.walking ? "walk" : "idle" }
+              ? { motion: partial.walking ? MOTION_WALK : MOTION_IDLE }
               : {}),
           },
         };
@@ -388,7 +392,7 @@ export function OverlayApp() {
               if (drafting || !pin) return synced;
               return {
                 ...synced,
-                state: { ...synced.state, motion: "idle" },
+                state: { ...synced.state, motion: MOTION_IDLE },
               };
             }
             // 위치 고정 모드·고정 중에도 테두리 progress는 해제 후 복귀용으로 유지
@@ -401,11 +405,11 @@ export function OverlayApp() {
                 facing: old.state.facing,
                 motion:
                   drafting || pin
-                    ? "idle"
+                    ? MOTION_IDLE
                     : self
                       ? moveRef.current.walking
-                        ? "walk"
-                        : "idle"
+                        ? MOTION_WALK
+                        : MOTION_IDLE
                       : synced.state.motion,
                 // 본인 이동 설정은 로컬이 권위, 피어는 수신 state 유지
                 speed: self ? moveRef.current.speed : synced.state.speed,
@@ -440,10 +444,10 @@ export function OverlayApp() {
                 ...base,
                 motion:
                   drafting || pin
-                    ? "idle"
+                    ? MOTION_IDLE
                     : moveRef.current.walking
-                      ? "walk"
-                      : "idle",
+                      ? MOTION_WALK
+                      : MOTION_IDLE,
                 speed: moveRef.current.speed,
                 pathMode: moveRef.current.pathMode,
               },
@@ -534,7 +538,7 @@ export function OverlayApp() {
             if (pins[m.id]) {
               // 로컬 고정: 이 기기에서는 멈춤
               if (m.state.motion === "idle") return m;
-              return { ...m, state: { ...m.state, motion: "idle" } };
+              return { ...m, state: { ...m.state, motion: MOTION_IDLE } };
             }
             if (self && !walking) {
               if (m.state.motion === "idle" && m.state.speed === speed && m.state.pathMode === pathMode) {
@@ -542,7 +546,7 @@ export function OverlayApp() {
               }
               return {
                 ...m,
-                state: { ...m.state, motion: "idle", speed, pathMode },
+                state: { ...m.state, motion: MOTION_IDLE, speed, pathMode },
               };
             }
             if (m.state.motion !== "walk") {
@@ -721,7 +725,7 @@ export function OverlayApp() {
             progress,
             edge: pt.edge,
             facing: pt.facing,
-            motion: "idle",
+            motion: MOTION_IDLE,
           },
         };
       });
@@ -821,7 +825,7 @@ export function OverlayApp() {
     setMembers((prev) =>
       prev.map((m) => ({
         ...m,
-        state: { ...m.state, motion: "idle" },
+        state: { ...m.state, motion: MOTION_IDLE },
       })),
     );
     setPlusOpen(false);

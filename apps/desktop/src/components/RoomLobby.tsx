@@ -1,7 +1,12 @@
 import { APP_NAME } from "@monibuddy/shared";
-import { CharacterView } from "./CharacterView";
-import type { Character } from "@monibuddy/shared";
+import type {
+  Character,
+  FriendInfo,
+  FriendInviteRecvPayload,
+} from "@monibuddy/shared";
 import { formatHotkeyLabel } from "../lib/overlayHotkey";
+import { CharacterView } from "./CharacterView";
+import { FriendsPanel } from "./FriendsPanel";
 import { Brand, Btn, SectionLabel, ShellCard } from "./ui";
 import { UpdateBanner } from "./UpdateBanner";
 
@@ -15,9 +20,19 @@ type Props = {
   error: string | null;
   forcePolling?: boolean;
   overlayHotkey?: string;
+  myFriendCode: string;
+  friends: FriendInfo[];
+  friendError: string | null;
+  pendingInvite: FriendInviteRecvPayload | null;
   onEditProfile: () => void;
   onShowOverlay?: () => void;
   onOpenRoomInfo?: () => void;
+  onCopyFriendCode: () => void;
+  onAddFriend: (code: string) => void;
+  onRemoveFriend: (userId: string) => void;
+  onInviteFriend: (userId: string) => void;
+  onAcceptInvite: () => void;
+  onDismissInvite: () => void;
 };
 
 export function RoomLobby({
@@ -30,12 +45,22 @@ export function RoomLobby({
   error,
   forcePolling = true,
   overlayHotkey = "",
+  myFriendCode,
+  friends,
+  friendError,
+  pendingInvite,
   onEditProfile,
   onShowOverlay,
   onOpenRoomInfo,
+  onCopyFriendCode,
+  onAddFriend,
+  onRemoveFriend,
+  onInviteFriend,
+  onAcceptInvite,
+  onDismissInvite,
 }: Props) {
   return (
-    <ShellCard>
+    <ShellCard wide>
       <Brand title={APP_NAME} subtitle={`HELLO, ${nickname}`} />
       <UpdateBanner />
 
@@ -64,13 +89,31 @@ export function RoomLobby({
           서버 연결 중… 첫 접속은 Render 깨우느라 최대 1분 걸릴 수 있어요
         </p>
       )}
-      {error && <p className="m-0 break-all text-[0.78rem] text-danger">{error}</p>}
+      {error && (
+        <p className="m-0 break-all text-[0.78rem] text-danger">{error}</p>
+      )}
       <p className="m-0 break-all text-[0.68rem] text-mute">서버: {serverUrl}</p>
       <p className="m-0 text-[0.68rem] text-mute">
         전송: {forcePolling ? "HTTPS 폴링 (회사망 호환)" : "WebSocket 허용"}
       </p>
 
-      <div className="pixel-divider" />
+      <FriendsPanel
+        myFriendCode={myFriendCode}
+        friends={friends}
+        connected={connected}
+        roomCode={roomCode}
+        pendingInvite={pendingInvite}
+        error={friendError}
+        serverUrl={serverUrl}
+        onCopyCode={onCopyFriendCode}
+        onAddFriend={onAddFriend}
+        onRemoveFriend={onRemoveFriend}
+        onInviteFriend={onInviteFriend}
+        onAcceptInvite={onAcceptInvite}
+        onDismissInvite={onDismissInvite}
+      />
+
+      <div className="h-px w-full bg-white opacity-85" />
 
       {inRoom && roomCode ? (
         <div className="grid justify-items-center gap-3 border border-white/50 bg-black/40 p-4 text-center">

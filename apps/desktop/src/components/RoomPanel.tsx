@@ -1,4 +1,5 @@
 import type { ChatMessage, Member } from "@monibuddy/shared";
+import { Btn, inputClass } from "./ui";
 
 type Props = {
   connected: boolean;
@@ -19,71 +20,87 @@ type Props = {
 
 export function RoomPanel(props: Props) {
   return (
-    <section className="card">
-      <h2 style={{ marginTop: 0 }}>방 · 채팅</h2>
+    <section className="rounded-2xl border border-white/20 bg-white/[0.08] px-4 py-4">
+      <h2 className="m-0 text-lg font-semibold text-white">방 · 채팅</h2>
       {!props.connected && (
-        <p className="error">서버에 연결되지 않았습니다. 서버 URL과 실행 상태를 확인하세요.</p>
+        <p className="m-0 text-[0.85rem] text-danger">
+          서버에 연결되지 않았습니다. 서버 URL과 실행 상태를 확인하세요.
+        </p>
       )}
-      {props.error && <p className="error">{props.error}</p>}
+      {props.error && (
+        <p className="m-0 text-[0.85rem] text-danger">{props.error}</p>
+      )}
 
       {props.roomCode ? (
         <>
-          <div className="muted">초대코드</div>
-          <div className="invite">{props.roomCode}</div>
-          <div className="row" style={{ marginTop: "0.75rem" }}>
-            <button type="button" onClick={props.onToggleMotion}>
+          <div className="mt-3 text-[0.9rem] text-mute">초대코드</div>
+          <div className="rounded-xl border border-white/20 bg-white/10 px-3 py-2.5 text-center font-mono text-2xl font-semibold tracking-[0.22em] text-white">
+            {props.roomCode}
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <Btn type="button" onClick={props.onToggleMotion}>
               이동/정지 토글
-            </button>
-            <button type="button" className="ghost" onClick={props.onLeave}>
+            </Btn>
+            <Btn type="button" variant="ghost" onClick={props.onLeave}>
               방 나가기
-            </button>
-            <button
+            </Btn>
+            <Btn
               type="button"
-              className="ghost"
-              onClick={() => void navigator.clipboard?.writeText(props.roomCode || "")}
+              variant="ghost"
+              onClick={() =>
+                void navigator.clipboard?.writeText(props.roomCode || "")
+              }
             >
               코드 복사
-            </button>
+            </Btn>
           </div>
-          <p className="muted">멤버: {props.members.map((m) => m.nickname).join(", ")}</p>
+          <p className="m-0 text-[0.9rem] text-mute">
+            멤버: {props.members.map((m) => m.nickname).join(", ")}
+          </p>
         </>
       ) : (
-        <div className="row">
-          <button
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          <Btn
             type="button"
-            className="primary"
+            variant="primary"
             onClick={props.onCreate}
             disabled={!props.connected}
           >
             방 만들기
-          </button>
+          </Btn>
           <input
+            className={`${inputClass} w-[7.5rem]`}
             value={props.inviteInput}
             onChange={(e) => props.onInviteInput(e.target.value.toUpperCase())}
             placeholder="초대코드"
             maxLength={6}
-            style={{ width: 120 }}
           />
-          <button type="button" onClick={props.onJoin} disabled={!props.connected}>
+          <Btn
+            type="button"
+            onClick={props.onJoin}
+            disabled={!props.connected}
+          >
             입장
-          </button>
+          </Btn>
         </div>
       )}
 
-      <div style={{ marginTop: "1rem" }}>
-        <div className="chat-log">
+      <div className="mt-4 grid gap-2">
+        <div className="grid max-h-[180px] gap-1.5 overflow-auto">
           {props.messages.length === 0 && (
-            <div className="muted">채팅이 여기에 표시됩니다. 말풍선은 오버레이에 뜹니다.</div>
+            <div className="text-[0.9rem] text-mute">
+              채팅이 여기에 표시됩니다. 말풍선은 오버레이에 뜹니다.
+            </div>
           )}
           {props.messages.map((m) => (
-            <div key={m.id} className="chat-line">
+            <div key={m.id} className="text-[0.92rem] text-white">
               <strong>{m.nickname}</strong>: {m.text}
             </div>
           ))}
         </div>
-        <div className="row" style={{ marginTop: "0.55rem" }}>
+        <div className="flex flex-wrap items-center gap-3">
           <input
-            style={{ flex: 1 }}
+            className={`${inputClass} min-w-0 flex-1`}
             value={props.chatInput}
             maxLength={80}
             placeholder="메시지 (최대 80자)"
@@ -93,14 +110,14 @@ export function RoomPanel(props: Props) {
             }}
             disabled={!props.roomCode}
           />
-          <button
+          <Btn
             type="button"
-            className="primary"
+            variant="primary"
             onClick={props.onSend}
             disabled={!props.roomCode}
           >
             전송
-          </button>
+          </Btn>
         </div>
       </div>
     </section>
