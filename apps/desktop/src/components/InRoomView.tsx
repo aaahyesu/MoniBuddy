@@ -1,5 +1,11 @@
-import type { Member, Character } from "@monibuddy/shared";
+import type {
+  Character,
+  FriendInfo,
+  FriendInviteRecvPayload,
+  Member,
+} from "@monibuddy/shared";
 import { CharacterView } from "./CharacterView";
+import { FriendsPanel } from "./FriendsPanel";
 import { Btn, ShellCard } from "./ui";
 
 type Props = {
@@ -8,8 +14,19 @@ type Props = {
   character: Character;
   serverUrl: string;
   members: Member[];
+  myFriendCode: string;
+  friends: FriendInfo[];
+  connected: boolean;
+  friendError: string | null;
+  pendingInvite: FriendInviteRecvPayload | null;
   onLeave: () => void;
   onOpenBuddyMenu: () => void;
+  onCopyFriendCode: () => void;
+  onAddFriend: (code: string) => void;
+  onRemoveFriend: (userId: string) => void;
+  onInviteFriend: (userId: string) => void;
+  onAcceptInvite: () => void;
+  onDismissInvite: () => void;
 };
 
 export function InRoomView({
@@ -18,11 +35,22 @@ export function InRoomView({
   character,
   serverUrl,
   members,
+  myFriendCode,
+  friends,
+  connected,
+  friendError,
+  pendingInvite,
   onLeave,
   onOpenBuddyMenu,
+  onCopyFriendCode,
+  onAddFriend,
+  onRemoveFriend,
+  onInviteFriend,
+  onAcceptInvite,
+  onDismissInvite,
 }: Props) {
   return (
-    <ShellCard>
+    <ShellCard wide>
       <p className="m-0 text-[0.9rem] text-mute">방에 들어왔어요</p>
       <div className="border border-white bg-black/50 px-3 py-2.5 text-center font-mono text-[1.35rem] font-bold tracking-[0.22em] text-accent-cyan">
         {roomCode}
@@ -51,6 +79,22 @@ export function InRoomView({
       <p className="m-0 text-center text-[0.9rem] text-mute">
         함께 {members.length}명 · {members.map((m) => m.nickname).join(", ")}
       </p>
+
+      <FriendsPanel
+        myFriendCode={myFriendCode}
+        friends={friends}
+        connected={connected}
+        roomCode={roomCode}
+        pendingInvite={pendingInvite}
+        error={friendError}
+        serverUrl={serverUrl}
+        onCopyCode={onCopyFriendCode}
+        onAddFriend={onAddFriend}
+        onRemoveFriend={onRemoveFriend}
+        onInviteFriend={onInviteFriend}
+        onAcceptInvite={onAcceptInvite}
+        onDismissInvite={onDismissInvite}
+      />
 
       <Btn variant="ghost" onClick={onOpenBuddyMenu}>
         퀘스트 · 캐릭터 (설정)

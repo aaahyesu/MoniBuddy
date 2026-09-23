@@ -383,8 +383,35 @@ export function App() {
         character={profile.character}
         serverUrl={profile.serverUrl}
         members={room.members}
+        myFriendCode={room.resolvedFriendCode || device.friendCode}
+        friends={room.friends}
+        connected={room.connected}
+        friendError={room.friendError}
+        pendingInvite={room.pendingInvite}
         onLeave={() => room.leaveRoom()}
         onOpenBuddyMenu={() => setScreen("buddy")}
+        onCopyFriendCode={() => {
+          const code = room.resolvedFriendCode || device.friendCode;
+          void navigator.clipboard?.writeText(code);
+        }}
+        onAddFriend={(code) => {
+          void room.addFriend(code);
+        }}
+        onRemoveFriend={(userId) => {
+          void room.removeFriend(userId);
+        }}
+        onInviteFriend={(userId) => {
+          void room.inviteFriend(userId);
+        }}
+        onAcceptInvite={() => {
+          const invite = room.pendingInvite;
+          if (!invite) return;
+          room.setPendingInvite(null);
+          void room.joinRoom(invite.roomCode).then((ok) => {
+            if (ok) setScreen("room");
+          });
+        }}
+        onDismissInvite={() => room.setPendingInvite(null)}
       />
     );
   }
