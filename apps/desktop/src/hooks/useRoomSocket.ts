@@ -9,10 +9,15 @@ import {
   type FriendInviteRecvPayload,
   type Member,
   type PresenceHelloAck,
+  type RoomNoticePayload,
   type RoomSnapshot,
   SocketEvents,
   defaultCharState,
 } from "@monibuddy/shared";
+import {
+  writeOverlayNotice,
+  writePendingInvite,
+} from "../lib/overlayBridge";
 
 type Options = {
   serverUrl: string;
@@ -40,7 +45,7 @@ export function useRoomSocket(opts: Options) {
   const [friends, setFriends] = useState<FriendInfo[]>([]);
   const [friendGroups, setFriendGroups] = useState<FriendGroup[]>([]);
   const [friendError, setFriendError] = useState<string | null>(null);
-  const [pendingInvite, setPendingInvite] =
+  const [pendingInvite, setPendingInviteState] =
     useState<FriendInviteRecvPayload | null>(null);
   const [resolvedFriendCode, setResolvedFriendCode] = useState(
     opts.friendCode ?? "",
@@ -64,6 +69,22 @@ export function useRoomSocket(opts: Options) {
     setMessages([]);
     seenIds.current.clear();
   }, []);
+
+  const setPendingInvite = useCallback((invite: FriendInviteRecvPayload | null) => {
+    setPendingInviteState(invite);
+    writePendingInvite(invite);
+  }, []);
+
+  // 60초 무응답 초대 만료
+  useEffect(() => {
+    if (!pendingInvite) return;
+    const age = Date.now() - (pendingInvite.at || Date.now());
+    const remain = Math.max(1000, 60_000 - age);
+    const t = window.setTimeout(() => {
+      setPendingInvite(null);
+    }, remain);
+    return () => window.clearTimeout(t);
+  }, [pendingInvite, setPendingInvite]);
 
   const sendPresenceHello = useCallback((socket: Socket) => {
     const { userId, friendCode, nickname, character } = optsRef.current;
@@ -237,6 +258,11 @@ export function useRoomSocket(opts: Options) {
       const onInvite = (payload: FriendInviteRecvPayload) => {
         setPendingInvite(payload);
       };
+      const onRoomNotice = (payload: RoomNoticePayload) => {
+        if (payload?.type !== "member-join") return;
+        const nick = (payload.nickname || "").trim() || "친구";
+        writeOverlayNotice(`${nick}님이 입장했습니다!`);
+      };
 
       socket.on("connect", onConnect);
       socket.on("disconnect", onDisconnect);
@@ -247,6 +273,7 @@ export function useRoomSocket(opts: Options) {
       socket.on(SocketEvents.FriendSync, onFriendSync);
       socket.on(SocketEvents.FriendPresence, onFriendPresence);
       socket.on(SocketEvents.FriendInviteRecv, onInvite);
+      socket.on(SocketEvents.RoomNotice, onRoomNotice);
     };
 
     void connect();
@@ -265,6 +292,7 @@ export function useRoomSocket(opts: Options) {
     sendPresenceHello,
     joinRoomOnSocket,
     clearRoomLocal,
+    setPendingInvite,
   ]);
 
   useEffect(() => {

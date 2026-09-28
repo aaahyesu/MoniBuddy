@@ -120,6 +120,7 @@ export const SocketEvents = {
   FriendGroupRename: "friend:group-rename",
   FriendGroupDelete: "friend:group-delete",
   FriendGroupAssign: "friend:group-assign",
+  RoomNotice: "room:notice",
 } as const;
 
 export type FriendGroup = {
@@ -212,6 +213,13 @@ export type FriendInviteRecvPayload = {
   fromUserId: string;
   fromNickname: string;
   roomCode: string;
+  at: number;
+};
+
+export type RoomNoticePayload = {
+  type: "member-join";
+  nickname: string;
+  memberId: string;
   at: number;
 };
 

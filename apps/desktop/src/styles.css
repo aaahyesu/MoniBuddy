@@ -485,6 +485,76 @@
   overflow-wrap: anywhere;
   max-height: calc(1.35em * 2);
 }
+
+.bubble.invite,
+.bubble.notice {
+  pointer-events: auto;
+  overflow: visible;
+  max-width: 210px;
+  z-index: 4;
+}
+
+.bubble.invite {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.45rem 0.55rem 0.5rem;
+}
+
+.bubble.invite .bubble-text {
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  max-height: calc(1.35em * 3);
+}
+
+.bubble-actions {
+  display: flex;
+  gap: 0.3rem;
+}
+
+.bubble-btn {
+  flex: 1;
+  appearance: none;
+  border: 1px solid rgba(28, 36, 48, 0.18);
+  border-radius: 8px;
+  padding: 0.28rem 0.35rem;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  cursor: pointer;
+  color: #1c2430;
+  background: rgba(28, 36, 48, 0.06);
+}
+
+.bubble-btn.accept {
+  background: #1c2430;
+  border-color: #1c2430;
+  color: #fff;
+}
+
+.bubble-btn.dismiss {
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.bubble-btn:active {
+  transform: translateY(1px);
+}
+
+.bubble.notice {
+  background: rgba(26, 26, 26, 0.92);
+  color: #f5f5f5;
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+.bubble.notice::after {
+  border-top-color: rgba(26, 26, 26, 0.92);
+}
+
+.actor.edge-top .bubble.notice::after {
+  border-top-color: transparent;
+  border-bottom-color: rgba(26, 26, 26, 0.92);
+}
+
 .bubble::after {
   content: "";
   position: absolute;

@@ -20,6 +20,12 @@ import {
 } from "./lib/deviceIdentity";
 import { isGuideComplete } from "./lib/productGuide";
 import { applyOverlayHotkey } from "./lib/overlayHotkey";
+import {
+  clearInviteAction,
+  INVITE_ACTION_EVENT,
+  readInviteAction,
+  readPendingInvite,
+} from "./lib/overlayBridge";
 import { persistActiveRoom } from "./overlay/OverlayApp";
 import { invokeSafe, isTauri } from "./lib/tauri";
 
@@ -162,6 +168,46 @@ export function App() {
       setScreen("lobby");
     }
   }, [room.roomCode, screen]);
+
+  // Overlay invite accept / dismiss
+  useEffect(() => {
+    const flush = () => {
+      try {
+        const action = readInviteAction();
+        if (!action) return;
+        if (Date.now() - action.at > 12000) {
+          clearInviteAction();
+          return;
+        }
+        clearInviteAction();
+        if (action.action === "dismiss") {
+          room.setPendingInvite(null);
+          return;
+        }
+        const invite = room.pendingInvite ?? readPendingInvite();
+        if (!invite?.roomCode) {
+          room.setPendingInvite(null);
+          return;
+        }
+        room.setPendingInvite(null);
+        void room.joinRoom(invite.roomCode).then((ok) => {
+          if (!ok) return;
+          progress.trackQuest("quest:first_room");
+          setScreen("room");
+        });
+      } catch {
+        /* ignore */
+      }
+    };
+    window.addEventListener(INVITE_ACTION_EVENT, flush);
+    window.addEventListener("storage", flush);
+    const id = window.setInterval(flush, 400);
+    return () => {
+      window.removeEventListener(INVITE_ACTION_EVENT, flush);
+      window.removeEventListener("storage", flush);
+      window.clearInterval(id);
+    };
+  }, [room.pendingInvite, room.joinRoom, room.setPendingInvite, progress]);
 
   // Overlay + menu → create / join / leave room
   useEffect(() => {

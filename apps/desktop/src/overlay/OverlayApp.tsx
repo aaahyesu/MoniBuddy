@@ -6,6 +6,7 @@ import {
   type ChatMessage,
   type Character,
   type CharMotion,
+  type FriendInviteRecvPayload,
   type Member,
   defaultCharState,
 } from "@monibuddy/shared";
@@ -22,10 +23,23 @@ import {
 } from "../lib/borderPath";
 import { loadBuddyManifest, type BuddyDef } from "../lib/defaultBuddies";
 import { readProfile, writeStatusMessage } from "../hooks/useLocalProfile";
+import {
+  OVERLAY_NOTICE_EVENT,
+  OVERLAY_NOTICE_KEY,
+  PENDING_INVITE_EVENT,
+  PENDING_INVITE_KEY,
+  clearOverlayNotice,
+  readOverlayNotice,
+  readPendingInvite,
+  writeInviteAction,
+  type OverlayNotice,
+} from "../lib/overlayBridge";
 import { useProductGuide } from "../hooks/useProductGuide";
 import { invokeSafe, isTauri } from "../lib/tauri";
 
 type Bubble = { memberId: string; text: string; until: number; id: string };
+
+const OVERLAY_NOTICE_TTL_MS = 4000;
 
 type MoveSettings = {
   speed: number;
@@ -235,6 +249,18 @@ export function OverlayApp() {
     {},
   );
   const [dragMemberId, setDragMemberId] = useState<string | null>(null);
+  const [pendingInvite, setPendingInvite] = useState<FriendInviteRecvPayload | null>(
+    () => readPendingInvite(),
+  );
+  const [overlayNotice, setOverlayNotice] = useState<OverlayNotice | null>(() => {
+    const n = readOverlayNotice();
+    if (!n) return null;
+    if (Date.now() - n.at > OVERLAY_NOTICE_TTL_MS) {
+      clearOverlayNotice();
+      return null;
+    }
+    return n;
+  });
 
   const chatInputRef = useRef<HTMLInputElement>(null);
   const selfIdRef = useRef<string>("local");
@@ -266,9 +292,58 @@ export function OverlayApp() {
   const captureFreezeStickyUntilRef = useRef(0);
   /** 오버레이 가이드 진행 중 — 클릭 통과 비활성 */
   const guideActiveRef = useRef(false);
+  /** 초대 말풍선(입장/거절) 표시 중 — 클릭 통과 비활성 */
+  const inviteUiRef = useRef(false);
 
   const guide = useProductGuide({ windowKind: "overlay" });
   guideActiveRef.current = guide.activeForWindow;
+  inviteUiRef.current = Boolean(pendingInvite);
+
+  useEffect(() => {
+    const syncInvite = () => setPendingInvite(readPendingInvite());
+    const syncNotice = () => {
+      const n = readOverlayNotice();
+      if (!n || Date.now() - n.at > OVERLAY_NOTICE_TTL_MS) {
+        if (n) clearOverlayNotice();
+        setOverlayNotice(null);
+        return;
+      }
+      setOverlayNotice(n);
+    };
+    const onStorage = (e: StorageEvent) => {
+      if (
+        e.key === PENDING_INVITE_KEY ||
+        e.key === OVERLAY_NOTICE_KEY ||
+        e.key == null
+      ) {
+        syncInvite();
+        syncNotice();
+      }
+    };
+    window.addEventListener(PENDING_INVITE_EVENT, syncInvite);
+    window.addEventListener(OVERLAY_NOTICE_EVENT, syncNotice);
+    window.addEventListener("storage", onStorage);
+    const id = window.setInterval(() => {
+      syncInvite();
+      syncNotice();
+    }, 400);
+    return () => {
+      window.removeEventListener(PENDING_INVITE_EVENT, syncInvite);
+      window.removeEventListener(OVERLAY_NOTICE_EVENT, syncNotice);
+      window.removeEventListener("storage", onStorage);
+      window.clearInterval(id);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!overlayNotice) return;
+    const remain = Math.max(50, OVERLAY_NOTICE_TTL_MS - (Date.now() - overlayNotice.at));
+    const t = window.setTimeout(() => {
+      clearOverlayNotice();
+      setOverlayNotice(null);
+    }, remain);
+    return () => window.clearTimeout(t);
+  }, [overlayNotice]);
 
   useEffect(() => {
     if (!guide.activeForWindow || !guide.session) return;
@@ -665,6 +740,7 @@ export function OverlayApp() {
             Math.abs(cx - w / 2) <= 220;
           const capture =
             guideActiveRef.current ||
+            inviteUiRef.current ||
             overActor ||
             overChat ||
             overRepositionBar ||
@@ -1103,23 +1179,79 @@ export function OverlayApp() {
                   : undefined
           }
         >
-          {bubble && (
-            <div className="bubble">
-              <span className="bubble-text">{bubble.text}</span>
-            </div>
-          )}
+          {(() => {
+            if (isSelf && pendingInvite) {
+              const nick = pendingInvite.fromNickname.trim() || "친구";
+              return (
+                <div
+                  className="bubble invite"
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <span className="bubble-text">
+                    {nick}님에게 초대가 왔습니다
+                  </span>
+                  <div className="bubble-actions">
+                    <button
+                      type="button"
+                      className="bubble-btn accept"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        writeInviteAction("accept");
+                      }}
+                    >
+                      입장
+                    </button>
+                    <button
+                      type="button"
+                      className="bubble-btn dismiss"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        writeInviteAction("dismiss");
+                      }}
+                    >
+                      거절
+                    </button>
+                  </div>
+                </div>
+              );
+            }
+            if (isSelf && overlayNotice) {
+              return (
+                <div className="bubble notice">
+                  <span className="bubble-text">{overlayNotice.text}</span>
+                </div>
+              );
+            }
+            if (bubble) {
+              return (
+                <div className="bubble">
+                  <span className="bubble-text">{bubble.text}</span>
+                </div>
+              );
+            }
+            return null;
+          })()}
           {(() => {
             const statusText = (
               isSelf ? statusMessage : member.statusMessage || ""
             ).trim();
             if (!statusText) return null;
+            const hasSpeech =
+              Boolean(bubble) ||
+              (isSelf && Boolean(pendingInvite || overlayNotice));
             return (
-              <div className={`status-bubble${bubble ? " with-chat" : ""}`}>
+              <div className={`status-bubble${hasSpeech ? " with-chat" : ""}`}>
                 {statusText}
               </div>
             );
           })()}
-          {isSelf && !bubble && !statusMessage && !panelOpen && (
+          {isSelf &&
+            !bubble &&
+            !pendingInvite &&
+            !overlayNotice &&
+            !statusMessage &&
+            !panelOpen && (
             <div className="tap-hint">나</div>
           )}
           {!isSelf && !!member.nickname?.trim() && (
