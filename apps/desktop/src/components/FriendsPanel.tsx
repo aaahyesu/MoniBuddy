@@ -6,6 +6,7 @@ type Props = {
   myFriendCode: string;
   friends: FriendInfo[];
   connected: boolean;
+  friendsReady?: boolean;
   roomCode: string | null;
   pendingInvite: FriendInviteRecvPayload | null;
   error: string | null;
@@ -22,6 +23,7 @@ export function FriendsPanel({
   myFriendCode,
   friends,
   connected,
+  friendsReady = true,
   roomCode,
   pendingInvite,
   error,
@@ -33,6 +35,7 @@ export function FriendsPanel({
   onAcceptInvite,
   onDismissInvite,
 }: Props) {
+  const canAdd = connected && friendsReady;
   return (
     <div className="grid gap-3 border border-white/50 bg-black/40 p-4">
       <SectionLabel tone="orange">Friends</SectionLabel>
@@ -69,12 +72,16 @@ export function FriendsPanel({
           className={`${inputClass} min-w-[8rem] flex-1 uppercase tracking-[0.15em]`}
           maxLength={8}
           placeholder="친구 코드"
-          disabled={!connected}
+          disabled={!canAdd}
         />
-        <Btn type="submit" variant="default" disabled={!connected}>
+        <Btn type="submit" variant="default" disabled={!canAdd}>
           친구 추가
         </Btn>
       </form>
+
+      {!friendsReady && connected ? (
+        <p className="m-0 text-[0.68rem] text-mute">친구 서버 등록 중…</p>
+      ) : null}
 
       {error ? (
         <p className="m-0 text-[0.78rem] text-danger">{error}</p>

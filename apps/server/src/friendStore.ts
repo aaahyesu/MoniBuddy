@@ -196,46 +196,76 @@ export class FriendStore {
     nickname: string;
     character: Character;
   }): Promise<StoredUser> {
-    const existing = await this.getUser(input.userId);
-    let friendCode = (input.friendCode || existing?.friendCode || "")
-      .trim()
-      .toUpperCase();
-
-    if (friendCode) {
-      const owner = await this.db.execute({
-        sql: `SELECT user_id FROM users WHERE friend_code = ?`,
-        args: [friendCode],
-      });
-      const ownerId = owner.rows[0] ? String(owner.rows[0].user_id) : null;
-      if (ownerId && ownerId !== input.userId) {
-        friendCode = await this.ensureUniqueCode();
-      }
-    } else {
-      friendCode = await this.ensureUniqueCode();
-    }
-
     const nickname = input.nickname.trim().slice(0, 16) || "Guest";
     const characterJson = JSON.stringify(input.character);
     const now = Date.now();
+    const requestedCode = (input.friendCode || "").trim().toUpperCase();
 
+    // 1) 같은 userId로 이미 등록된 계정 → 프로필만 갱신, 친구 관계 유지
+    const existingById = await this.getUser(input.userId);
+    if (existingById) {
+      let friendCode = existingById.friendCode;
+      if (
+        requestedCode &&
+        requestedCode !== existingById.friendCode
+      ) {
+        const owner = await this.db.execute({
+          sql: `SELECT user_id FROM users WHERE friend_code = ?`,
+          args: [requestedCode],
+        });
+        const ownerId = owner.rows[0] ? String(owner.rows[0].user_id) : null;
+        if (!ownerId || ownerId === input.userId) {
+          friendCode = requestedCode;
+        }
+      }
+      await this.db.execute({
+        sql: `UPDATE users SET friend_code = ?, nickname = ?, character_json = ?, updated_at = ?
+              WHERE user_id = ?`,
+        args: [friendCode, nickname, characterJson, now, input.userId],
+      });
+      const friends = await this.friendIdsOf(input.userId);
+      return {
+        userId: input.userId,
+        friendCode,
+        nickname,
+        character: input.character,
+        friends,
+      };
+    }
+
+    // 2) userId는 새것인데 friendCode가 기존 계정이면 → 그 계정으로 복구 (친구 목록 유지)
+    if (requestedCode) {
+      const byCode = await this.getUserByFriendCode(requestedCode);
+      if (byCode) {
+        await this.db.execute({
+          sql: `UPDATE users SET nickname = ?, character_json = ?, updated_at = ?
+                WHERE user_id = ?`,
+          args: [nickname, characterJson, now, byCode.userId],
+        });
+        const friends = await this.friendIdsOf(byCode.userId);
+        return {
+          userId: byCode.userId,
+          friendCode: byCode.friendCode,
+          nickname,
+          character: input.character,
+          friends,
+        };
+      }
+    }
+
+    // 3) 완전 신규 계정
+    const friendCode = await this.ensureUniqueCode(requestedCode || undefined);
     await this.db.execute({
       sql: `INSERT INTO users (user_id, friend_code, nickname, character_json, updated_at)
-            VALUES (?, ?, ?, ?, ?)
-            ON CONFLICT(user_id) DO UPDATE SET
-              friend_code = excluded.friend_code,
-              nickname = excluded.nickname,
-              character_json = excluded.character_json,
-              updated_at = excluded.updated_at`,
+            VALUES (?, ?, ?, ?, ?)`,
       args: [input.userId, friendCode, nickname, characterJson, now],
     });
-
-    const friends = existing?.friends ?? (await this.friendIdsOf(input.userId));
     return {
       userId: input.userId,
       friendCode,
       nickname,
       character: input.character,
-      friends,
+      friends: [],
     };
   }
 
@@ -309,17 +339,29 @@ export class FriendStore {
             WHERE f.user_id = ?`,
       args: [userId],
     });
-    return rs.rows.map((row) => {
-      const friend = this.parseUser(row as unknown as Record<string, unknown>);
+    const out: FriendInfo[] = [];
+    for (const raw of rs.rows) {
+      const row = raw as Record<string, unknown>;
+      const id = String(row.user_id ?? row["u.user_id"] ?? "");
+      if (!id) continue;
+      const friend = this.parseUser(
+        {
+          user_id: id,
+          friend_code: row.friend_code ?? row["u.friend_code"],
+          nickname: row.nickname ?? row["u.nickname"],
+          character_json: row.character_json ?? row["u.character_json"],
+        },
+      );
       const live = this.presence.get(friend.userId);
-      return {
+      out.push({
         userId: friend.userId,
         friendCode: friend.friendCode,
         nickname: live?.nickname ?? friend.nickname,
         character: live?.character ?? friend.character,
         online: this.presence.has(friend.userId),
-      } satisfies FriendInfo;
-    });
+      });
+    }
+    return out;
   }
 
   async addFriend(

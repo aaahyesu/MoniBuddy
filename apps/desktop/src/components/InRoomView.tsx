@@ -17,6 +17,7 @@ type Props = {
   myFriendCode: string;
   friends: FriendInfo[];
   connected: boolean;
+  friendsReady?: boolean;
   friendError: string | null;
   pendingInvite: FriendInviteRecvPayload | null;
   onLeave: () => void;
@@ -38,6 +39,7 @@ export function InRoomView({
   myFriendCode,
   friends,
   connected,
+  friendsReady = true,
   friendError,
   pendingInvite,
   onLeave,
@@ -84,6 +86,7 @@ export function InRoomView({
         myFriendCode={myFriendCode}
         friends={friends}
         connected={connected}
+        friendsReady={friendsReady}
         roomCode={roomCode}
         pendingInvite={pendingInvite}
         error={friendError}
