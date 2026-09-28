@@ -80,9 +80,11 @@ export function App() {
           return;
         }
         setScreen("lobby");
-        window.requestAnimationFrame(() => {
+        // 클릭 이벤트 종료 후 열어, 딤 레이어가 같은 클릭으로 바로 닫히는 것 방지
+        window.setTimeout(() => {
           guide.start("settings", 0);
-        });
+          void invokeSafe("show_settings");
+        }, 40);
       },
     }),
     [guide],

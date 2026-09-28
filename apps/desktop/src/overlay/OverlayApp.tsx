@@ -269,6 +269,9 @@ export function OverlayApp() {
   });
   const [letterQueue, setLetterQueue] = useState<LetterItem[]>([]);
   const [eggQueue, setEggQueue] = useState<string[]>([]);
+  const [letterPhase, setLetterPhase] = useState<
+    "icon" | "opening" | "revealed" | null
+  >(null);
 
   const chatInputRef = useRef<HTMLInputElement>(null);
   const selfIdRef = useRef<string>("local");
@@ -300,17 +303,21 @@ export function OverlayApp() {
   const captureFreezeStickyUntilRef = useRef(0);
   /** 오버레이 가이드 진행 중 — 클릭 통과 비활성 */
   const guideActiveRef = useRef(false);
+  /** 설정 창 가이드 중 — 오버레이가 클릭을 가로채지 않음 */
+  const settingsGuidePassRef = useRef(false);
   /** 초대 말풍선(입장/거절) 표시 중 — 클릭 통과 비활성 */
   const inviteUiRef = useRef(false);
-  /** 방 없는 혼잣말·에코 중복 방지용 로컬 편지 */
-  const letterUiRef = useRef(false);
+  /** 편지/계란 클릭 캡처 범위: none | icon(하단) | full */
+  const effectHitRef = useRef<"none" | "icon" | "full">("none");
   const recentSelfLetters = useRef<Array<{ text: string; at: number }>>([]);
   const recentSelfEggs = useRef<number[]>([]);
 
   const guide = useProductGuide({ windowKind: "overlay" });
   guideActiveRef.current = guide.activeForWindow;
+  settingsGuidePassRef.current = Boolean(
+    guide.session?.active && guide.session.phase === "settings",
+  );
   inviteUiRef.current = Boolean(pendingInvite);
-  letterUiRef.current = letterQueue.length > 0 || eggQueue.length > 0;
 
   useEffect(() => {
     const syncInvite = () => setPendingInvite(readPendingInvite());
@@ -381,6 +388,15 @@ export function OverlayApp() {
       setJoinOpen(false);
     }
   }, [guide.activeForWindow, guide.session?.step]);
+
+  // 설정 창 가이드 중엔 오버레이 패널을 닫아 전체 화면 클릭 가로채기 방지
+  useEffect(() => {
+    if (!guide.session?.active || guide.session.phase !== "settings") return;
+    setPanelOpen(false);
+    setPlusOpen(false);
+    setJoinOpen(false);
+    setMoveOpen(false);
+  }, [guide.session?.active, guide.session?.phase]);
 
   const setCaptureFreeze = (frozen: boolean) => {
     if (frozen) {
@@ -585,6 +601,8 @@ export function OverlayApp() {
           const fromSelf =
             msg.memberId === selfId ||
             (selfId === "local" && msg.memberId === "local");
+          // 지정 연출은 수신자만
+          if (fromSelf && msg.targetNickname) continue;
           if (fromSelf) {
             const now = Date.now();
             const idx = recentSelfEggs.current.findIndex((at) => now - at < 12000);
@@ -610,6 +628,7 @@ export function OverlayApp() {
           const fromSelf =
             msg.memberId === selfId ||
             (selfId === "local" && msg.memberId === "local");
+          if (fromSelf && msg.targetNickname) continue;
           if (fromSelf) {
             const now = Date.now();
             const idx = recentSelfLetters.current.findIndex(
@@ -804,16 +823,27 @@ export function OverlayApp() {
             repositionRef.current &&
             cy >= h - 90 &&
             Math.abs(cx - w / 2) <= 220;
-          const capture =
-            guideActiveRef.current ||
-            inviteUiRef.current ||
-            letterUiRef.current ||
-            overActor ||
-            overChat ||
-            overRepositionBar ||
-            draggingRef.current ||
-            repositionRef.current ||
-            (panelOpenRef.current && !repositionRef.current);
+          const effectHit = effectHitRef.current;
+          const overLetterIcon =
+            effectHit === "icon" &&
+            cy >= h * 0.55 &&
+            cy <= h * 0.95 &&
+            Math.abs(cx - w / 2) <= 140;
+          const overEffectFull = effectHit === "full";
+          // 설정 창 가이드가 떠 있으면 무조건 클릭 통과 — 안 그러면
+          // 풀스크린 오버레이가 설정 가이드 입력을 가로채 깜빡임/먹통 발생
+          const capture = settingsGuidePassRef.current
+            ? false
+            : guideActiveRef.current ||
+              inviteUiRef.current ||
+              overLetterIcon ||
+              overEffectFull ||
+              overActor ||
+              overChat ||
+              overRepositionBar ||
+              draggingRef.current ||
+              repositionRef.current ||
+              (panelOpenRef.current && !repositionRef.current);
           const syncGen = clickThroughSyncGenRef.current;
           const now = Date.now();
           // 패널이 열린 동안은 주기적으로 재적용 — 캡처 양보/복구가
@@ -1146,8 +1176,11 @@ export function OverlayApp() {
 
     if (effect.kind === "egg") {
       if (!effect.text) return;
-      recentSelfEggs.current.push(Date.now());
-      setEggQueue((prev) => [...prev, `local-egg-${Date.now()}`]);
+      // 지정 계란은 상대만 봄 — 보낸 사람은 로컬 연출 생략
+      if (!effect.targetNickname) {
+        recentSelfEggs.current.push(Date.now());
+        setEggQueue((prev) => [...prev, `local-egg-${Date.now()}`]);
+      }
       const outbound = effect.targetNickname
         ? `/계란 ${effect.targetNickname}`
         : "/계란";
@@ -1165,12 +1198,15 @@ export function OverlayApp() {
     if (effect.kind === "letter") {
       if (!effect.text) return;
       const text = effect.text.slice(0, MAX_CHAT_LENGTH);
-      const nick = (readProfile().nickname || "").trim() || "나";
-      recentSelfLetters.current.push({ text, at: Date.now() });
-      setLetterQueue((prev) => [
-        ...prev,
-        { id: `local-letter-${Date.now()}`, nickname: nick, text },
-      ]);
+      // 지정 편지는 상대만 봄 — 보낸 사람은 로컬 연출 생략
+      if (!effect.targetNickname) {
+        const nick = (readProfile().nickname || "").trim() || "나";
+        recentSelfLetters.current.push({ text, at: Date.now() });
+        setLetterQueue((prev) => [
+          ...prev,
+          { id: `local-letter-${Date.now()}`, nickname: nick, text },
+        ]);
+      }
       const outbound = effect.targetNickname
         ? `/편지 ${effect.targetNickname} ${text}`
         : `/편지 ${text}`;
@@ -1256,6 +1292,13 @@ export function OverlayApp() {
   const hasLocalPins = Object.keys(localPins).length > 0;
   const activeLetter = letterQueue[0] ?? null;
   const activeEgg = !activeLetter ? (eggQueue[0] ?? null) : null;
+  effectHitRef.current = activeEgg
+    ? "full"
+    : letterPhase === "icon"
+      ? "icon"
+      : letterPhase === "opening" || letterPhase === "revealed"
+        ? "full"
+        : "none";
   const roomNicksForDraft = members
     .map((m) => m.nickname?.trim())
     .filter((n): n is string => Boolean(n));
@@ -1265,9 +1308,9 @@ export function OverlayApp() {
   const letterDraft = composeMode === "chat" && isLetterChatDraft(chat);
   const targetHint =
     effectDraft?.targetNickname
-      ? effectDraft.kind === "egg" && !effectDraft.text
-        ? "닉 확인"
-        : `→${effectDraft.targetNickname}`
+      ? effectDraft.text
+        ? `→${effectDraft.targetNickname}`
+        : "닉 확인"
       : "전원";
   const chatMaxLen =
     letterDraft || eggDraft
@@ -1281,9 +1324,13 @@ export function OverlayApp() {
       {activeLetter && (
         <LetterReveal
           letter={activeLetter}
-          onDismiss={() =>
-            setLetterQueue((prev) => prev.filter((l) => l.id !== activeLetter.id))
-          }
+          onPhaseChange={setLetterPhase}
+          onDismiss={() => {
+            setLetterPhase(null);
+            setLetterQueue((prev) =>
+              prev.filter((l) => l.id !== activeLetter.id),
+            );
+          }}
         />
       )}
       {activeEgg && (
@@ -1704,7 +1751,7 @@ export function OverlayApp() {
                     : eggDraft
                       ? "/계란 [닉]"
                       : inRoom
-                        ? "메시지 · /편지 [닉] · /계란 [닉]"
+                        ? "메시지 · /편지 닉 내용 · /계란 닉"
                         : "혼잣말 · /편지 · /계란…"
               }
               onChange={(e) => setChat(e.target.value)}

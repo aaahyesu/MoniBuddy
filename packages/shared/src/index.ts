@@ -106,32 +106,47 @@ export type EffectChatParse = {
 };
 
 function stripTargetToken(token: string) {
-  return token.replace(/^@/, "").trim();
+  return token.replace(/^@/, "").trim().normalize("NFC");
 }
 
 function matchNickname(candidate: string, nicknames: string[]) {
-  const key = candidate.toLowerCase();
-  return nicknames.find((n) => n.trim().toLowerCase() === key);
+  const key = stripTargetToken(candidate).toLowerCase();
+  if (!key) return undefined;
+  const normalized = nicknames
+    .map((n) => n.trim().normalize("NFC"))
+    .filter(Boolean);
+  const exact = normalized.find((n) => n.toLowerCase() === key);
+  if (exact) return exact;
+  // 유일한 접두/포함 매치면 허용 (짧은 닉 오타·일부 입력)
+  if (key.length >= 2) {
+    const prefixed = normalized.filter((n) => n.toLowerCase().startsWith(key));
+    if (prefixed.length === 1) return prefixed[0];
+    const includes = normalized.filter((n) => n.toLowerCase().includes(key));
+    if (includes.length === 1) return includes[0];
+  }
+  return undefined;
 }
 
 /**
  * `/편지 [닉] 내용`, `/계란 [닉]`
- * 닉이 멤버 목록에 있으면 타겟, 없으면 편지 본문으로 취급(전원)
+ * - `/편지 안녕` → 전원 (토큰 1개 = 본문)
+ * - `/편지 닉 내용` → 닉은 항상 대상으로 분리. 방에 없으면 drop(빈 text)
+ * - `/계란` / `/계란 닉` 동일
  */
 export function parseEffectChat(
   raw: string,
   memberNicknames: string[] = [],
 ): EffectChatParse {
-  const trimmed = String(raw ?? "").trim();
+  const trimmed = String(raw ?? "").trim().normalize("NFC");
   const nicks = memberNicknames.map((n) => n.trim()).filter(Boolean);
 
   const egg = trimmed.match(/^\/(?:계란|egg)(?:\s+(@?\S+))?\s*$/i);
   if (egg) {
     if (!egg[1]) return { kind: "egg", text: "계란" };
-    const hit = matchNickname(stripTargetToken(egg[1]), nicks);
+    const token = stripTargetToken(egg[1]);
+    const hit = matchNickname(token, nicks);
     if (hit) return { kind: "egg", text: "계란", targetNickname: hit };
-    // 없는 닉 → 무시용 empty egg (서버에서 drop)
-    return { kind: "egg", text: "", targetNickname: stripTargetToken(egg[1]) };
+    return { kind: "egg", text: "", targetNickname: token };
   }
 
   const letterBody = trimmed.match(/^\/(?:편지|letter)\s+([\s\S]*)$/i);
@@ -140,14 +155,16 @@ export function parseEffectChat(
     if (!rest) return { kind: "letter", text: "" };
     const parts = rest.match(/^(@?\S+)\s+([\s\S]+)$/);
     if (parts) {
-      const hit = matchNickname(stripTargetToken(parts[1]), nicks);
+      const token = stripTargetToken(parts[1]);
+      const body = parts[2].trim();
+      if (!body) return { kind: "letter", text: "" };
+      const hit = matchNickname(token, nicks);
+      // 두 토큰 이상이면 첫 토큰은 항상 닉으로 분리 (본문에 닉 포함 금지)
       if (hit) {
-        return {
-          kind: "letter",
-          text: parts[2].trim(),
-          targetNickname: hit,
-        };
+        return { kind: "letter", text: body, targetNickname: hit };
       }
+      // 방에 없는 닉 → drop (본문으로 합치지 않음)
+      return { kind: "letter", text: "", targetNickname: token };
     }
     return { kind: "letter", text: rest };
   }

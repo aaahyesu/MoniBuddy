@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { GuideStepDef } from "../lib/productGuide";
 import { Btn } from "./ui";
 import { cn } from "../lib/cn";
@@ -49,8 +49,10 @@ export function GuideSpotlight({
   variant = "settings",
 }: Props) {
   const [hole, setHole] = useState<Rect | null>(null);
+  const openedAtRef = useRef(Date.now());
 
   useLayoutEffect(() => {
+    openedAtRef.current = Date.now();
     const measure = () => setHole(findAnchorRect(stepDef.anchor));
     measure();
     // 앵커 DOM이 늦게 열릴 수 있음 (오버레이 + 메뉴 등)
@@ -72,6 +74,12 @@ export function GuideSpotlight({
       ro.disconnect();
     };
   }, [stepDef.anchor, stepIndex]);
+
+  const dismissFromBackdrop = () => {
+    // 가이드를 연 직후 같은 클릭/포커스 이동으로 바로 닫히지 않게
+    if (Date.now() - openedAtRef.current < 350) return;
+    onDismiss();
+  };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -112,7 +120,7 @@ export function GuideSpotlight({
               right: 0,
               height: hole.top,
             }}
-            onClick={onDismiss}
+            onClick={dismissFromBackdrop}
           />
           <div
             className="absolute bg-black/70"
@@ -122,7 +130,7 @@ export function GuideSpotlight({
               right: 0,
               bottom: 0,
             }}
-            onClick={onDismiss}
+            onClick={dismissFromBackdrop}
           />
           <div
             className="absolute bg-black/70"
@@ -132,7 +140,7 @@ export function GuideSpotlight({
               width: hole.left,
               height: hole.height,
             }}
-            onClick={onDismiss}
+            onClick={dismissFromBackdrop}
           />
           <div
             className="absolute bg-black/70"
@@ -142,7 +150,7 @@ export function GuideSpotlight({
               right: 0,
               height: hole.height,
             }}
-            onClick={onDismiss}
+            onClick={dismissFromBackdrop}
           />
           <div
             className="pointer-events-none absolute border border-white"
@@ -158,7 +166,7 @@ export function GuideSpotlight({
       ) : (
         <div
           className="absolute inset-0 bg-black/70"
-          onClick={onDismiss}
+          onClick={dismissFromBackdrop}
         />
       )}
 
