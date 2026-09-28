@@ -823,6 +823,17 @@ export function OverlayApp() {
             repositionRef.current &&
             cy >= h - 90 &&
             Math.abs(cx - w / 2) <= 220;
+          const overInvite =
+            inviteUiRef.current &&
+            actorsRef.current.some((a) => {
+              if (!a.isSelf) return false;
+              // 초대 말풍선은 캐릭터 위에 붙음 — 세로로 넉넉히
+              return (
+                Math.abs(cx - a.x) <= hitPad + 70 &&
+                cy <= a.y + hitPad &&
+                cy >= a.y - 140
+              );
+            });
           const effectHit = effectHitRef.current;
           const overLetterIcon =
             effectHit === "icon" &&
@@ -835,7 +846,7 @@ export function OverlayApp() {
           const capture = settingsGuidePassRef.current
             ? false
             : guideActiveRef.current ||
-              inviteUiRef.current ||
+              overInvite ||
               overLetterIcon ||
               overEffectFull ||
               overActor ||
@@ -846,11 +857,12 @@ export function OverlayApp() {
               (panelOpenRef.current && !repositionRef.current);
           const syncGen = clickThroughSyncGenRef.current;
           const now = Date.now();
-          // 패널이 열린 동안은 주기적으로 재적용 — 캡처 양보/복구가
-          // ignore_cursor를 다시 켜도 lastCapture가 같아서 먹통 되던 문제 방지
+          // capture=true일 때만 주기 재적용. 설정 가이드 중(false 고정)엔
+          // set_click_through를 반복 호출하지 않음
           const forceResync =
-            syncGen !== lastSyncGen ||
-            (capture && now - lastForceAt >= 400);
+            !settingsGuidePassRef.current &&
+            (syncGen !== lastSyncGen ||
+              (capture && now - lastForceAt >= 400));
           if (lastCapture !== capture || forceResync) {
             lastCapture = capture;
             lastSyncGen = syncGen;
