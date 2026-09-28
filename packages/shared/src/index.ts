@@ -92,7 +92,89 @@ export type ChatMessage = {
   nickname: string;
   text: string;
   at: number;
+  /** 없으면 일반 채팅 */
+  kind?: "chat" | "letter" | "egg";
+  /** 편지/계란 대상 닉네임 (없으면 방 전원) */
+  targetNickname?: string;
 };
+
+export type EffectChatParse = {
+  kind: "chat" | "letter" | "egg";
+  text: string;
+  /** 지정 시 해당 닉만 (없으면 전원) */
+  targetNickname?: string;
+};
+
+function stripTargetToken(token: string) {
+  return token.replace(/^@/, "").trim();
+}
+
+function matchNickname(candidate: string, nicknames: string[]) {
+  const key = candidate.toLowerCase();
+  return nicknames.find((n) => n.trim().toLowerCase() === key);
+}
+
+/**
+ * `/편지 [닉] 내용`, `/계란 [닉]`
+ * 닉이 멤버 목록에 있으면 타겟, 없으면 편지 본문으로 취급(전원)
+ */
+export function parseEffectChat(
+  raw: string,
+  memberNicknames: string[] = [],
+): EffectChatParse {
+  const trimmed = String(raw ?? "").trim();
+  const nicks = memberNicknames.map((n) => n.trim()).filter(Boolean);
+
+  const egg = trimmed.match(/^\/(?:계란|egg)(?:\s+(@?\S+))?\s*$/i);
+  if (egg) {
+    if (!egg[1]) return { kind: "egg", text: "계란" };
+    const hit = matchNickname(stripTargetToken(egg[1]), nicks);
+    if (hit) return { kind: "egg", text: "계란", targetNickname: hit };
+    // 없는 닉 → 무시용 empty egg (서버에서 drop)
+    return { kind: "egg", text: "", targetNickname: stripTargetToken(egg[1]) };
+  }
+
+  const letterBody = trimmed.match(/^\/(?:편지|letter)\s+([\s\S]*)$/i);
+  if (letterBody) {
+    const rest = letterBody[1].trim();
+    if (!rest) return { kind: "letter", text: "" };
+    const parts = rest.match(/^(@?\S+)\s+([\s\S]+)$/);
+    if (parts) {
+      const hit = matchNickname(stripTargetToken(parts[1]), nicks);
+      if (hit) {
+        return {
+          kind: "letter",
+          text: parts[2].trim(),
+          targetNickname: hit,
+        };
+      }
+    }
+    return { kind: "letter", text: rest };
+  }
+  if (/^\/(?:편지|letter)\s*$/i.test(trimmed)) {
+    return { kind: "letter", text: "" };
+  }
+  return { kind: "chat", text: trimmed };
+}
+
+/** @deprecated parseEffectChat 사용 */
+export function parseLetterChat(raw: string): {
+  kind: "chat" | "letter";
+  text: string;
+} {
+  const parsed = parseEffectChat(raw);
+  if (parsed.kind === "egg") return { kind: "chat", text: raw.trim() };
+  return { kind: parsed.kind, text: parsed.text };
+}
+
+export function isLetterChatDraft(raw: string): boolean {
+  return /^\/(?:편지|letter)(\s|$)/i.test(String(raw ?? "").trim());
+}
+
+/** `/계란` 또는 `/계란 닉네임` */
+export function isEggChat(raw: string): boolean {
+  return /^\/(?:계란|egg)(?:\s+@?\S+)?\s*$/i.test(String(raw ?? "").trim());
+}
 
 export type RoomSnapshot = {
   code: string;
