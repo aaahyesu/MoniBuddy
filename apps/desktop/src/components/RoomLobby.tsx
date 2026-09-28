@@ -36,7 +36,7 @@ type Props = {
   onInviteFriend: (userId: string) => void;
   onAcceptInvite: () => void;
   onDismissInvite: () => void;
-  onCreateGroup: (name: string) => void | Promise<boolean | void>;
+  onCreateGroup: (name: string) => Promise<string | false> | string | false;
   onRenameGroup: (groupId: string, name: string) => void | Promise<boolean | void>;
   onDeleteGroup: (groupId: string) => void | Promise<boolean | void>;
   onAssignGroup: (
