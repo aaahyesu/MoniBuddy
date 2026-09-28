@@ -43,6 +43,9 @@ export function useRoomSocket(opts: Options) {
   const [resolvedFriendCode, setResolvedFriendCode] = useState(
     opts.friendCode ?? "",
   );
+  /** PresenceHello 성공 후에만 친구 추가 가능 */
+  const [friendsReady, setFriendsReady] = useState(false);
+  const [resolvedUserId, setResolvedUserId] = useState<string | null>(null);
   const seenIds = useRef(new Set<string>());
   const optsRef = useRef(opts);
   /** 입장 중인 방 코드. 의도적 퇴장 시에만 비움 — 끊겨도 유지해 재입장에 사용 */
@@ -73,11 +76,14 @@ export function useRoomSocket(opts: Options) {
       },
       (ack: PresenceHelloAck) => {
         if (!ack?.ok) {
+          setFriendsReady(false);
           setFriendError(ack?.error ?? "친구 서버 등록 실패");
           return;
         }
         setResolvedFriendCode(ack.friendCode);
-        setFriends(ack.friends);
+        setResolvedUserId(ack.userId);
+        setFriends(ack.friends ?? []);
+        setFriendsReady(true);
         setFriendError(null);
       },
     );
@@ -172,7 +178,10 @@ export function useRoomSocket(opts: Options) {
         sendPresenceHello(socket!);
         void tryRejoin();
       };
-      const onDisconnect = () => setConnected(false);
+      const onDisconnect = () => {
+        setConnected(false);
+        setFriendsReady(false);
+      };
       const onConnectError = (err: Error) => {
         setConnected(false);
         setError(
@@ -407,24 +416,38 @@ export function useRoomSocket(opts: Options) {
       setFriendError("서버에 연결되지 않았어요");
       return false;
     }
+    if (!friendsReady) {
+      setFriendError("친구 서버 등록 중이에요. 잠시 후 다시 시도해 주세요");
+      return false;
+    }
+    const code = friendCode.trim().toUpperCase();
+    if (code.length < 4) {
+      setFriendError("친구 코드를 확인해 주세요");
+      return false;
+    }
     const ack = await new Promise<{
       ok: boolean;
       friends?: FriendInfo[];
       error?: string;
     }>((resolve) => {
-      socket.emit(
-        SocketEvents.FriendAdd,
-        { friendCode: friendCode.trim().toUpperCase() },
-        resolve,
-      );
+      socket.emit(SocketEvents.FriendAdd, { friendCode: code }, resolve);
     });
     if (!ack?.ok) {
-      setFriendError(ack?.error ?? "친구 추가 실패");
+      const raw = ack?.error ?? "친구 추가 실패";
+      const mapped =
+        raw === "friend code not found"
+          ? "친구 코드를 찾을 수 없어요. 상대도 앱을 켠 뒤 다시 시도해 주세요"
+          : raw === "not registered"
+            ? "친구 서버 등록 중이에요. 잠시 후 다시 시도해 주세요"
+            : raw === "cannot add yourself"
+              ? "자기 자신은 추가할 수 없어요"
+              : raw;
+      setFriendError(mapped);
       return false;
     }
     setFriends(ack.friends ?? []);
     return true;
-  }, []);
+  }, [friendsReady]);
 
   const removeFriend = useCallback(async (userId: string) => {
     setFriendError(null);
@@ -506,6 +529,8 @@ export function useRoomSocket(opts: Options) {
     friendError,
     pendingInvite,
     resolvedFriendCode,
+    resolvedUserId,
+    friendsReady,
     createRoom,
     joinRoom,
     leaveRoom,

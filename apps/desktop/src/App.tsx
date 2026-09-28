@@ -113,14 +113,16 @@ export function App() {
     friendCode: device.friendCode,
   });
 
-  // 서버가 배정한 friendCode를 기기에 저장
+  // 서버가 배정한 userId·friendCode를 기기에 저장 (재설치 전까지 동일 계정 유지)
   useEffect(() => {
-    if (!room.resolvedFriendCode) return;
-    if (room.resolvedFriendCode === device.friendCode) return;
-    const next = { ...device, friendCode: room.resolvedFriendCode };
+    if (!room.resolvedFriendCode && !room.resolvedUserId) return;
+    const nextCode = room.resolvedFriendCode || device.friendCode;
+    const nextUserId = room.resolvedUserId || device.userId;
+    if (nextCode === device.friendCode && nextUserId === device.userId) return;
+    const next = { userId: nextUserId, friendCode: nextCode };
     writeDeviceIdentity(next);
     setDevice(next);
-  }, [room.resolvedFriendCode, device]);
+  }, [room.resolvedFriendCode, room.resolvedUserId, device]);
 
   useEffect(() => {
     persistActiveRoom(room.roomCode);
@@ -386,6 +388,7 @@ export function App() {
         myFriendCode={room.resolvedFriendCode || device.friendCode}
         friends={room.friends}
         connected={room.connected}
+        friendsReady={room.friendsReady}
         friendError={room.friendError}
         pendingInvite={room.pendingInvite}
         onLeave={() => room.leaveRoom()}
@@ -425,6 +428,7 @@ export function App() {
         inRoom={Boolean(room.roomCode)}
         roomCode={room.roomCode}
         connected={room.connected}
+        friendsReady={room.friendsReady}
         error={room.error}
         forcePolling={profile.forcePolling}
         overlayHotkey={profile.overlayHotkey}

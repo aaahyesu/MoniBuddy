@@ -17,6 +17,7 @@ type Props = {
   inRoom: boolean;
   roomCode: string | null;
   connected: boolean;
+  friendsReady?: boolean;
   error: string | null;
   forcePolling?: boolean;
   overlayHotkey?: string;
@@ -42,6 +43,7 @@ export function RoomLobby({
   inRoom,
   roomCode,
   connected,
+  friendsReady = true,
   error,
   forcePolling = true,
   overlayHotkey = "",
@@ -101,6 +103,7 @@ export function RoomLobby({
         myFriendCode={myFriendCode}
         friends={friends}
         connected={connected}
+        friendsReady={friendsReady}
         roomCode={roomCode}
         pendingInvite={pendingInvite}
         error={friendError}
