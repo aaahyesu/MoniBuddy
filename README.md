@@ -53,16 +53,21 @@ MoniBuddy는 화면 가장자리에 작은 캐릭터(버디)를 띄워 두고, �
 | 친구 코드 | 기기마다 고유 친구 코드 발급 (설정 창에서 복사) |
 | 친구 추가 / 삭제 | 상대 코드로 추가, 목록에서 삭제 |
 | 온라인 / 오프라인 | 서버에 연결된 친구 presence 표시 |
+| 친구 그룹 | 내 목록 전용 그룹 생성·필터(칩)·지정 (Turso 저장) |
 | 방 초대 | 내가 방에 있을 때 온라인 친구에게 초대 → 수락 시 같은 방 입장 |
 
 #### 친구 데이터 ERD (Turso / SQLite)
 
-영구 저장은 `users` + `friendships` 두 테이블입니다. 온라인 여부는 DB에 없고 **서버 메모리 presence**로만 표시합니다.
+영구 저장은 `users` + `friendships` + `friend_groups` + `friend_group_members`입니다. 온라인 여부는 DB에 없고 **서버 메모리 presence**로만 표시합니다.
 
 ```mermaid
 erDiagram
   users ||--o{ friendships : "user_id (나)"
   users ||--o{ friendships : "friend_id (상대)"
+  users ||--o{ friend_groups : "owner_id"
+  friend_groups ||--o{ friend_group_members : "group_id"
+  users ||--o{ friend_group_members : "owner_id"
+  users ||--o{ friend_group_members : "friend_id"
 
   users {
     text user_id PK "기기 계정 ID"
@@ -76,9 +81,23 @@ erDiagram
     text user_id PK,FK "나"
     text friend_id PK,FK "친구"
   }
+
+  friend_groups {
+    text id PK
+    text owner_id FK
+    text name
+    integer sort_order
+  }
+
+  friend_group_members {
+    text owner_id PK,FK "나"
+    text friend_id PK,FK "친구"
+    text group_id PK,FK "그룹"
+  }
 ```
 
 - 친구 추가 시 **양방향** 2행을 넣습니다 (`A→B`, `B→A`).
+- 그룹은 **내 목록 전용**이며, 한 친구는 `friend_group_members`로 **여러 그룹**에 속할 수 있습니다 (멤버십 없으면 미분류).
 - 목록은 항상 `friendships` 기준이며, 접속 중이면 온라인 · 아니면 오프라인입니다.
 - `PresenceHello` 시 `friend_code`로 기존 계정을 복구할 수 있습니다 (userId가 바뀐 경우).
 
