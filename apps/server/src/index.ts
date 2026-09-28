@@ -44,6 +44,7 @@ import {
   UPLOAD_MAX_EDGE,
   createInviteCode,
   defaultCharState,
+  parseEffectChat,
 } from "@monibuddy/shared";
 import { mountDesktopUpdaterProxy } from "./desktopUpdater";
 import { FriendStore } from "./friendStore";
@@ -301,7 +302,43 @@ io.on("connection", (socket) => {
     const member = room.members.get(memberId);
     if (!member) return;
 
-    const text = String(payload?.text ?? "").trim().slice(0, MAX_CHAT_LENGTH);
+    const nicknames = [...room.members.values()].map((m) => m.nickname);
+    const parsed = parseEffectChat(String(payload?.text ?? ""), nicknames);
+
+    const emitToRoomOrTarget = (message: ChatMessage, targetNick?: string) => {
+      if (!targetNick) {
+        io.to(code).emit(SocketEvents.ChatBroadcast, message);
+        return;
+      }
+      const target = [...room.members.values()].find(
+        (m) => m.nickname.trim().toLowerCase() === targetNick.trim().toLowerCase(),
+      );
+      if (!target) return;
+      for (const [sid, mid] of room.socketToMember) {
+        if (mid === target.id || mid === member.id) {
+          io.to(sid).emit(SocketEvents.ChatBroadcast, message);
+        }
+      }
+    };
+
+    if (parsed.kind === "egg") {
+      if (!parsed.text) return;
+      const message: ChatMessage = {
+        id: nanoid(12),
+        memberId: member.id,
+        nickname: member.nickname,
+        text: "계란",
+        at: Date.now(),
+        kind: "egg",
+        ...(parsed.targetNickname
+          ? { targetNickname: parsed.targetNickname }
+          : {}),
+      };
+      emitToRoomOrTarget(message, parsed.targetNickname);
+      return;
+    }
+
+    const text = parsed.text.slice(0, MAX_CHAT_LENGTH);
     if (!text) return;
 
     const message: ChatMessage = {
@@ -310,12 +347,17 @@ io.on("connection", (socket) => {
       nickname: member.nickname,
       text,
       at: Date.now(),
+      ...(parsed.kind === "letter" ? { kind: "letter" as const } : {}),
+      ...(parsed.kind === "letter" && parsed.targetNickname
+        ? { targetNickname: parsed.targetNickname }
+        : {}),
     };
-    // Single broadcast including sender — clients dedupe by id if optimistic
-    io.to(code).emit(SocketEvents.ChatBroadcast, message);
+    emitToRoomOrTarget(
+      message,
+      parsed.kind === "letter" ? parsed.targetNickname : undefined,
+    );
 
     setTimeout(() => {
-      // bubble TTL hint only; clients also hide locally
       void BUBBLE_TTL_MS;
     }, BUBBLE_TTL_MS);
   });

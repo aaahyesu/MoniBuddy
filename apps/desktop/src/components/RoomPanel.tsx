@@ -94,7 +94,22 @@ export function RoomPanel(props: Props) {
           )}
           {props.messages.map((m) => (
             <div key={m.id} className="text-[0.92rem] text-white">
-              <strong>{m.nickname}</strong>: {m.text}
+              <strong>{m.nickname}</strong>
+              {m.kind === "letter" ? (
+                <span className="ml-1.5 inline-block border border-accent-cyan/70 px-1.5 py-0.5 text-[0.65rem] font-bold tracking-wide text-accent-cyan">
+                  편지
+                </span>
+              ) : m.kind === "egg" ? (
+                <span className="ml-1.5 text-[0.65rem] font-bold tracking-wide text-[#ffe14d]">
+                  계란
+                </span>
+              ) : null}
+              {m.targetNickname ? (
+                <span className="ml-1 text-[0.7rem] text-mute">
+                  →{m.targetNickname}
+                </span>
+              ) : null}
+              : {m.text}
             </div>
           ))}
         </div>
@@ -102,8 +117,8 @@ export function RoomPanel(props: Props) {
           <input
             className={`${inputClass} min-w-0 flex-1`}
             value={props.chatInput}
-            maxLength={80}
-            placeholder="메시지 (최대 80자)"
+            maxLength={120}
+            placeholder="/편지 [닉] 내용 · /계란 [닉]"
             onChange={(e) => props.onChatInput(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter") props.onSend();

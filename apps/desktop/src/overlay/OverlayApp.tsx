@@ -9,6 +9,10 @@ import {
   type FriendInviteRecvPayload,
   type Member,
   defaultCharState,
+  isEggChat,
+  isLetterChatDraft,
+  parseEffectChat,
+  parseLetterChat,
 } from "@monibuddy/shared";
 import { GuideSpotlight } from "../components/GuideSpotlight";
 import { resolveDefaultServerUrl } from "../lib/serverUrl";
@@ -36,6 +40,8 @@ import {
 } from "../lib/overlayBridge";
 import { useProductGuide } from "../hooks/useProductGuide";
 import { invokeSafe, isTauri } from "../lib/tauri";
+import { LetterReveal, type LetterItem } from "./LetterReveal";
+import { EggThrow } from "./EggThrow";
 
 type Bubble = { memberId: string; text: string; until: number; id: string };
 
@@ -261,6 +267,8 @@ export function OverlayApp() {
     }
     return n;
   });
+  const [letterQueue, setLetterQueue] = useState<LetterItem[]>([]);
+  const [eggQueue, setEggQueue] = useState<string[]>([]);
 
   const chatInputRef = useRef<HTMLInputElement>(null);
   const selfIdRef = useRef<string>("local");
@@ -294,10 +302,15 @@ export function OverlayApp() {
   const guideActiveRef = useRef(false);
   /** 초대 말풍선(입장/거절) 표시 중 — 클릭 통과 비활성 */
   const inviteUiRef = useRef(false);
+  /** 방 없는 혼잣말·에코 중복 방지용 로컬 편지 */
+  const letterUiRef = useRef(false);
+  const recentSelfLetters = useRef<Array<{ text: string; at: number }>>([]);
+  const recentSelfEggs = useRef<number[]>([]);
 
   const guide = useProductGuide({ windowKind: "overlay" });
   guideActiveRef.current = guide.activeForWindow;
   inviteUiRef.current = Boolean(pendingInvite);
+  letterUiRef.current = letterQueue.length > 0 || eggQueue.length > 0;
 
   useEffect(() => {
     const syncInvite = () => setPendingInvite(readPendingInvite());
@@ -567,6 +580,59 @@ export function OverlayApp() {
       for (const msg of rt?.messages ?? []) {
         if (seenChat.current.has(msg.id)) continue;
         seenChat.current.add(msg.id);
+        if (msg.kind === "egg" || isEggChat(msg.text || "")) {
+          const selfId = selfIdRef.current;
+          const fromSelf =
+            msg.memberId === selfId ||
+            (selfId === "local" && msg.memberId === "local");
+          if (fromSelf) {
+            const now = Date.now();
+            const idx = recentSelfEggs.current.findIndex((at) => now - at < 12000);
+            if (idx >= 0) {
+              recentSelfEggs.current.splice(idx, 1);
+              continue;
+            }
+          }
+          setEggQueue((prev) => (prev.includes(msg.id) ? prev : [...prev, msg.id]));
+          continue;
+        }
+        const letterBody =
+          msg.kind === "letter"
+            ? (msg.text || "").trim()
+            : (() => {
+                const parsed = parseLetterChat(msg.text || "");
+                return parsed.kind === "letter" ? parsed.text : "";
+              })();
+        if (msg.kind === "letter" || letterBody) {
+          const text = letterBody;
+          if (!text) continue;
+          const selfId = selfIdRef.current;
+          const fromSelf =
+            msg.memberId === selfId ||
+            (selfId === "local" && msg.memberId === "local");
+          if (fromSelf) {
+            const now = Date.now();
+            const idx = recentSelfLetters.current.findIndex(
+              (p) => p.text === text && now - p.at < 12000,
+            );
+            if (idx >= 0) {
+              recentSelfLetters.current.splice(idx, 1);
+              continue;
+            }
+          }
+          setLetterQueue((prev) => {
+            if (prev.some((l) => l.id === msg.id)) return prev;
+            return [
+              ...prev,
+              {
+                id: msg.id,
+                nickname: (msg.nickname || "").trim() || "친구",
+                text,
+              },
+            ];
+          });
+          continue;
+        }
         setBubbles((prev) => [
           ...prev.filter(
             (b) => b.until > Date.now() && b.memberId !== msg.memberId,
@@ -741,6 +807,7 @@ export function OverlayApp() {
           const capture =
             guideActiveRef.current ||
             inviteUiRef.current ||
+            letterUiRef.current ||
             overActor ||
             overChat ||
             overRepositionBar ||
@@ -1059,8 +1126,9 @@ export function OverlayApp() {
   };
 
   const sendChat = () => {
-    const text = chat.trim().slice(0, MAX_CHAT_LENGTH);
+    const raw = chat.trim();
     if (composeMode === "status") {
+      const text = raw.slice(0, 40);
       const next = writeStatusMessage(text);
       setStatusMessage(next);
       setChat("");
@@ -1069,7 +1137,56 @@ export function OverlayApp() {
       setMoveOpen(false);
       return;
     }
-    if (!text) return;
+    if (!raw) return;
+
+    const roomNicks = members
+      .map((m) => m.nickname?.trim())
+      .filter((n): n is string => Boolean(n));
+    const effect = parseEffectChat(raw, roomNicks);
+
+    if (effect.kind === "egg") {
+      if (!effect.text) return;
+      recentSelfEggs.current.push(Date.now());
+      setEggQueue((prev) => [...prev, `local-egg-${Date.now()}`]);
+      const outbound = effect.targetNickname
+        ? `/계란 ${effect.targetNickname}`
+        : "/계란";
+      localStorage.setItem(
+        PENDING_CHAT_KEY,
+        JSON.stringify({ text: outbound, at: Date.now() }),
+      );
+      window.dispatchEvent(new Event("monibuddy:pendingChat"));
+      setChat("");
+      setPlusOpen(false);
+      setMoveOpen(false);
+      return;
+    }
+
+    if (effect.kind === "letter") {
+      if (!effect.text) return;
+      const text = effect.text.slice(0, MAX_CHAT_LENGTH);
+      const nick = (readProfile().nickname || "").trim() || "나";
+      recentSelfLetters.current.push({ text, at: Date.now() });
+      setLetterQueue((prev) => [
+        ...prev,
+        { id: `local-letter-${Date.now()}`, nickname: nick, text },
+      ]);
+      const outbound = effect.targetNickname
+        ? `/편지 ${effect.targetNickname} ${text}`
+        : `/편지 ${text}`;
+      localStorage.setItem(
+        PENDING_CHAT_KEY,
+        JSON.stringify({ text: outbound, at: Date.now() }),
+      );
+      window.dispatchEvent(new Event("monibuddy:pendingChat"));
+      setChat("");
+      setPlusOpen(false);
+      setMoveOpen(false);
+      return;
+    }
+
+    const chatText = effect.text.slice(0, MAX_CHAT_LENGTH);
+    if (!chatText) return;
 
     const selfId = selfIdRef.current || "local";
     const optimisticId = `local-${Date.now()}`;
@@ -1077,7 +1194,7 @@ export function OverlayApp() {
       ...prev.filter((b) => b.until > Date.now() && b.memberId !== selfId),
       {
         memberId: selfId,
-        text,
+        text: chatText,
         until: Date.now() + BUBBLE_TTL_MS,
         id: optimisticId,
       },
@@ -1086,7 +1203,7 @@ export function OverlayApp() {
 
     localStorage.setItem(
       PENDING_CHAT_KEY,
-      JSON.stringify({ text, at: Date.now() }),
+      JSON.stringify({ text: chatText, at: Date.now() }),
     );
     window.dispatchEvent(new Event("monibuddy:pendingChat"));
     setChat("");
@@ -1137,9 +1254,44 @@ export function OverlayApp() {
   }));
 
   const hasLocalPins = Object.keys(localPins).length > 0;
+  const activeLetter = letterQueue[0] ?? null;
+  const activeEgg = !activeLetter ? (eggQueue[0] ?? null) : null;
+  const roomNicksForDraft = members
+    .map((m) => m.nickname?.trim())
+    .filter((n): n is string => Boolean(n));
+  const effectDraft =
+    composeMode === "chat" ? parseEffectChat(chat, roomNicksForDraft) : null;
+  const eggDraft = effectDraft?.kind === "egg";
+  const letterDraft = composeMode === "chat" && isLetterChatDraft(chat);
+  const targetHint =
+    effectDraft?.targetNickname
+      ? effectDraft.kind === "egg" && !effectDraft.text
+        ? "닉 확인"
+        : `→${effectDraft.targetNickname}`
+      : "전원";
+  const chatMaxLen =
+    letterDraft || eggDraft
+      ? MAX_CHAT_LENGTH + 40
+      : composeMode === "status"
+        ? 40
+        : MAX_CHAT_LENGTH;
 
   return (
     <div className="overlay-root">
+      {activeLetter && (
+        <LetterReveal
+          letter={activeLetter}
+          onDismiss={() =>
+            setLetterQueue((prev) => prev.filter((l) => l.id !== activeLetter.id))
+          }
+        />
+      )}
+      {activeEgg && (
+        <EggThrow
+          key={activeEgg}
+          onDone={() => setEggQueue((prev) => prev.filter((id) => id !== activeEgg))}
+        />
+      )}
       {actors.map(({ member, x, y, edge, facing, bubble, isSelf, pinned }) => {
         const isDraggingThis = dragMemberId === member.id;
         const canDrag = isSelf || repositionMode;
@@ -1543,13 +1695,17 @@ export function OverlayApp() {
             <input
               ref={chatInputRef}
               value={chat}
-              maxLength={composeMode === "status" ? 40 : MAX_CHAT_LENGTH}
+              maxLength={chatMaxLen}
               placeholder={
                 composeMode === "status"
                   ? "상태메시지 (항상 표시)…"
-                  : inRoom
-                    ? "메시지 보내기…"
-                    : "혼잣말 보내기…"
+                  : letterDraft
+                    ? "/편지 [닉] 내용…"
+                    : eggDraft
+                      ? "/계란 [닉]"
+                      : inRoom
+                        ? "메시지 · /편지 [닉] · /계란 [닉]"
+                        : "혼잣말 · /편지 · /계란…"
               }
               onChange={(e) => setChat(e.target.value)}
               onKeyDown={(e) => {
@@ -1563,6 +1719,16 @@ export function OverlayApp() {
                 }
               }}
             />
+            {letterDraft && (
+              <span className="composer-letter-hint" aria-live="polite">
+                편지 · {targetHint}
+              </span>
+            )}
+            {eggDraft && !letterDraft && (
+              <span className="composer-letter-hint" aria-live="polite">
+                계란 · {targetHint}
+              </span>
+            )}
             {composeMode === "status" && (
               <button
                 type="button"
