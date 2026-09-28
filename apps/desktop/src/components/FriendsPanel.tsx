@@ -11,6 +11,10 @@ import { cn } from "../lib/cn";
 
 type FilterKey = "all" | "ungrouped" | string;
 
+type GroupEditor =
+  | { mode: "create" }
+  | { mode: "members"; group: FriendGroup };
+
 type Props = {
   myFriendCode: string;
   friends: FriendInfo[];
@@ -27,7 +31,8 @@ type Props = {
   onInviteFriend: (userId: string) => void;
   onAcceptInvite: () => void;
   onDismissInvite: () => void;
-  onCreateGroup: (name: string) => void | Promise<boolean | void>;
+  /** 성공 시 새 그룹 id, 실패 시 false */
+  onCreateGroup: (name: string) => Promise<string | false> | string | false;
   onRenameGroup: (groupId: string, name: string) => void | Promise<boolean | void>;
   onDeleteGroup: (groupId: string) => void | Promise<boolean | void>;
   onAssignGroup: (
@@ -59,10 +64,9 @@ export function FriendsPanel({
 }: Props) {
   const canAdd = connected && friendsReady;
   const [filter, setFilter] = useState<FilterKey>("all");
-  const [creating, setCreating] = useState(false);
-  const [newName, setNewName] = useState("");
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState("");
+  const [editor, setEditor] = useState<GroupEditor | null>(null);
   const [groupBusy, setGroupBusy] = useState(false);
 
   const selectedGroup =
@@ -87,10 +91,24 @@ export function FriendsPanel({
     return friends.filter((f) => (f.groupIds ?? []).includes(filter));
   }, [friends, filter]);
 
+  const syncGroupMembers = async (groupId: string, selectedIds: Set<string>) => {
+    for (const f of friends) {
+      const has = (f.groupIds ?? []).includes(groupId);
+      const want = selectedIds.has(f.userId);
+      if (has === want) continue;
+      const next = new Set(f.groupIds ?? []);
+      if (want) next.add(groupId);
+      else next.delete(groupId);
+      const ok = await Promise.resolve(onAssignGroup(f.userId, [...next]));
+      if (ok === false) return false;
+    }
+    return true;
+  };
+
   return (
     <div
       data-guide="guide-friends"
-      className="grid gap-3 border border-white/50 bg-black/40 p-4"
+      className="relative grid gap-3 border border-white/50 bg-black/40 p-4"
     >
       <SectionLabel tone="orange">Friends</SectionLabel>
 
@@ -193,67 +211,17 @@ export function FriendsPanel({
         >
           미분류
         </FilterChip>
-        {!creating ? (
-          <Btn
-            type="button"
-            variant="default"
-            className="px-2.5 py-1 text-[0.72rem]"
-            disabled={!canAdd || groupBusy}
-            title={!canAdd ? "서버 연결 후 사용할 수 있어요" : "그룹 만들기"}
-            onClick={() => setCreating(true)}
-          >
-            + 그룹
-          </Btn>
-        ) : null}
-      </div>
-
-      {creating ? (
-        <form
-          className="flex w-full flex-wrap items-center gap-2 border border-white/30 bg-black/40 p-2"
-          onSubmit={(e) => {
-            e.preventDefault();
-            const name = newName.trim();
-            if (!name || groupBusy) return;
-            setGroupBusy(true);
-            void Promise.resolve(onCreateGroup(name)).then((ok) => {
-              setGroupBusy(false);
-              if (ok === false) return;
-              setNewName("");
-              setCreating(false);
-            });
-          }}
+        <Btn
+          type="button"
+          variant="default"
+          className="px-2.5 py-1 text-[0.72rem]"
+          disabled={!canAdd || groupBusy}
+          title={!canAdd ? "서버 연결 후 사용할 수 있어요" : "그룹 만들기"}
+          onClick={() => setEditor({ mode: "create" })}
         >
-          <input
-            autoFocus
-            className={`${inputClass} min-w-[10rem] flex-1 py-1.5 text-[0.82rem]`}
-            maxLength={24}
-            placeholder="그룹 이름 입력"
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            disabled={!canAdd || groupBusy}
-          />
-          <Btn
-            type="submit"
-            variant="primary"
-            className="px-3 py-1.5 text-[0.72rem]"
-            disabled={!canAdd || groupBusy || !newName.trim()}
-          >
-            {groupBusy ? "추가 중…" : "추가"}
-          </Btn>
-          <Btn
-            type="button"
-            variant="ghost"
-            className="px-2 py-1 text-[0.72rem]"
-            disabled={groupBusy}
-            onClick={() => {
-              setCreating(false);
-              setNewName("");
-            }}
-          >
-            취소
-          </Btn>
-        </form>
-      ) : null}
+          + 그룹
+        </Btn>
+      </div>
 
       {!canAdd ? (
         <p className="m-0 text-[0.68rem] text-mute">
@@ -297,6 +265,17 @@ export function FriendsPanel({
             <>
               <Btn
                 type="button"
+                variant="default"
+                className="px-2 py-1 text-[0.72rem]"
+                disabled={!canAdd || groupBusy}
+                onClick={() =>
+                  setEditor({ mode: "members", group: selectedGroup })
+                }
+              >
+                멤버
+              </Btn>
+              <Btn
+                type="button"
                 variant="ghost"
                 className="px-2 py-1 text-[0.72rem]"
                 onClick={() => {
@@ -322,7 +301,7 @@ export function FriendsPanel({
         </div>
       ) : null}
 
-      <ul className="m-0 grid max-h-[240px] list-none gap-2 overflow-y-auto p-0 pr-1">
+      <ul className="pixel-scroll m-0 grid max-h-[240px] list-none gap-2 overflow-y-auto border border-white/25 bg-black/30 p-2">
         {list.length === 0 ? (
           <li className="text-[0.78rem] text-mute">
             {friends.length === 0 ? "아직 친구가 없어요" : "이 그룹에 친구가 없어요"}
@@ -337,7 +316,6 @@ export function FriendsPanel({
               canInvite={f.online}
               onInvite={() => onInviteFriend(f.userId)}
               onRemove={() => onRemoveFriend(f.userId)}
-              onAssign={(groupIds) => onAssignGroup(f.userId, groupIds)}
             />
           ))
         )}
@@ -352,6 +330,213 @@ export function FriendsPanel({
           현재 방 {roomCode} 으로 온라인 친구를 초대할 수 있어요.
         </p>
       )}
+
+      {editor ? (
+        <GroupEditorModal
+          editor={editor}
+          friends={friends}
+          serverUrl={serverUrl}
+          busy={groupBusy}
+          onClose={() => {
+            if (groupBusy) return;
+            setEditor(null);
+          }}
+          onSubmit={async (name, selectedIds) => {
+            setGroupBusy(true);
+            try {
+              if (editor.mode === "create") {
+                const trimmed = name.trim();
+                if (!trimmed) return false;
+                const groupId = await Promise.resolve(onCreateGroup(trimmed));
+                if (!groupId) return false;
+                const ok = await syncGroupMembers(groupId, selectedIds);
+                if (!ok) return false;
+                setFilter(groupId);
+                setEditor(null);
+                return true;
+              }
+              const ok = await syncGroupMembers(editor.group.id, selectedIds);
+              if (!ok) return false;
+              setEditor(null);
+              return true;
+            } finally {
+              setGroupBusy(false);
+            }
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function GroupEditorModal({
+  editor,
+  friends,
+  serverUrl,
+  busy,
+  onClose,
+  onSubmit,
+}: {
+  editor: GroupEditor;
+  friends: FriendInfo[];
+  serverUrl: string;
+  busy: boolean;
+  onClose: () => void;
+  onSubmit: (name: string, selectedIds: Set<string>) => Promise<boolean>;
+}) {
+  const initialSelected = useMemo(() => {
+    if (editor.mode === "create") return new Set<string>();
+    return new Set(
+      friends
+        .filter((f) => (f.groupIds ?? []).includes(editor.group.id))
+        .map((f) => f.userId),
+    );
+  }, [editor, friends]);
+
+  const [name, setName] = useState(
+    editor.mode === "create" ? "" : editor.group.name,
+  );
+  const [selected, setSelected] = useState<Set<string>>(initialSelected);
+
+  useEffect(() => {
+    setSelected(initialSelected);
+  }, [initialSelected]);
+
+  const title = editor.mode === "create" ? "새 그룹" : "멤버 관리";
+  const subtitle =
+    editor.mode === "create"
+      ? "이름을 정하고 친구를 눌러 넣어요"
+      : `"${editor.group.name}" — 눌러서 넣기/빼기`;
+
+  return (
+    <div
+      className="absolute inset-0 z-20 grid place-items-center bg-black/75 p-3"
+      role="dialog"
+      aria-modal="true"
+      aria-label={title}
+      onClick={onClose}
+    >
+      <div
+        className="grid w-full max-w-[380px] gap-3 border border-white bg-black/95 p-4 shadow-[0_0_0_1px_rgba(255,255,255,0.2)]"
+        onClick={(e) => e.stopPropagation()}
+        onPointerDown={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <h3 className="m-0 text-[0.9rem] font-bold uppercase tracking-wide text-white">
+              {title}
+            </h3>
+            <p className="m-0 mt-1 text-[0.72rem] text-mute">{subtitle}</p>
+          </div>
+          <button
+            type="button"
+            className="border border-white/40 px-2 py-0.5 text-[0.72rem] text-mute hover:border-white hover:text-white"
+            aria-label="닫기"
+            disabled={busy}
+            onClick={onClose}
+          >
+            ✕
+          </button>
+        </div>
+
+        {editor.mode === "create" ? (
+          <input
+            autoFocus
+            className={`${inputClass} py-2 text-[0.85rem]`}
+            maxLength={24}
+            placeholder="그룹 이름"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            disabled={busy}
+          />
+        ) : null}
+
+        <ul className="pixel-scroll m-0 grid max-h-[200px] list-none gap-1.5 overflow-y-auto border border-white/30 bg-black/50 p-2">
+          {friends.length === 0 ? (
+            <li className="px-1 py-2 text-[0.78rem] text-mute">
+              아직 친구가 없어요. 나중에 멤버에서 넣을 수 있어요.
+            </li>
+          ) : (
+            friends.map((f) => {
+              const on = selected.has(f.userId);
+              return (
+                <li key={f.userId}>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => {
+                      setSelected((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(f.userId)) next.delete(f.userId);
+                        else next.add(f.userId);
+                        return next;
+                      });
+                    }}
+                    className={cn(
+                      "flex w-full items-center gap-2 border px-2 py-1.5 text-left transition",
+                      on
+                        ? "border-white bg-white/15 text-white"
+                        : "border-white/20 bg-transparent text-mute hover:border-white/50 hover:text-white",
+                    )}
+                  >
+                    <div className="grid size-9 shrink-0 place-items-center overflow-hidden border border-black/20 bg-buddy">
+                      <CharacterView
+                        character={f.character as Character}
+                        serverUrl={serverUrl}
+                        size={36}
+                        fixedSize
+                      />
+                    </div>
+                    <span className="min-w-0 flex-1 truncate text-[0.8rem]">
+                      {f.nickname}
+                    </span>
+                    <span
+                      className={cn(
+                        "shrink-0 border px-1.5 py-0.5 text-[0.65rem]",
+                        on
+                          ? "border-white bg-white text-black"
+                          : "border-white/30",
+                      )}
+                    >
+                      {on ? "IN" : "+"}
+                    </span>
+                  </button>
+                </li>
+              );
+            })
+          )}
+        </ul>
+
+        <p className="m-0 text-[0.68rem] text-mute">
+          선택 {selected.size}명
+          {editor.mode === "members" ? " · 다시 누르면 제외" : ""}
+        </p>
+
+        <div className="flex gap-2">
+          <Btn
+            type="button"
+            variant="ghost"
+            className="flex-1"
+            disabled={busy}
+            onClick={onClose}
+          >
+            취소
+          </Btn>
+          <Btn
+            type="button"
+            variant="primary"
+            className="flex-[1.4]"
+            disabled={
+              busy || (editor.mode === "create" && !name.trim())
+            }
+            onClick={() => {
+              void onSubmit(name, selected);
+            }}
+          >
+            {busy ? "저장 중…" : editor.mode === "create" ? "만들기" : "저장"}
+          </Btn>
+        </div>
+      </div>
     </div>
   );
 }
@@ -388,7 +573,6 @@ function FriendRow({
   canInvite,
   onInvite,
   onRemove,
-  onAssign,
 }: {
   friend: FriendInfo;
   groups: FriendGroup[];
@@ -396,11 +580,13 @@ function FriendRow({
   canInvite: boolean;
   onInvite: () => void;
   onRemove: () => void;
-  onAssign: (groupIds: string[]) => void;
 }) {
-  const selected = new Set(friend.groupIds ?? []);
+  const labels = groups
+    .filter((g) => (friend.groupIds ?? []).includes(g.id))
+    .map((g) => g.name);
+
   return (
-    <li className="flex items-center gap-3 border border-white/20 bg-black/30 p-2">
+    <li className="flex items-center gap-3 border border-white/20 bg-black/40 p-2">
       <div className="relative grid size-12 shrink-0 place-items-center overflow-hidden border border-black/20 bg-buddy">
         <CharacterView
           character={friend.character as Character}
@@ -420,40 +606,12 @@ function FriendRow({
         <p className="m-0 text-[0.68rem] text-mute">
           {friend.online ? "온라인" : "오프라인"} · {friend.friendCode}
         </p>
-        {groups.length > 0 ? (
-          <div className="mt-1.5 flex flex-wrap gap-1.5">
-            {groups.map((g) => {
-              const checked = selected.has(g.id);
-              return (
-                <label
-                  key={g.id}
-                  className={cn(
-                    "cursor-pointer border px-1.5 py-0.5 text-[0.65rem] transition",
-                    checked
-                      ? "border-white bg-white/15 text-white"
-                      : "border-white/25 text-mute hover:border-white/50",
-                  )}
-                >
-                  <input
-                    type="checkbox"
-                    className="sr-only"
-                    checked={checked}
-                    onChange={() => {
-                      const next = new Set(selected);
-                      if (checked) next.delete(g.id);
-                      else next.add(g.id);
-                      onAssign([...next]);
-                    }}
-                  />
-                  {g.name}
-                </label>
-              );
-            })}
-          </div>
-        ) : (
-          <p className="m-0 mt-1 text-[0.65rem] text-mute">
-            그룹을 만들면 여기에 지정할 수 있어요
+        {labels.length > 0 ? (
+          <p className="m-0 mt-1 truncate text-[0.65rem] text-accent-cyan">
+            {labels.join(" · ")}
           </p>
+        ) : (
+          <p className="m-0 mt-1 text-[0.65rem] text-mute">미분류</p>
         )}
       </div>
       <div className="flex shrink-0 flex-row items-center gap-1">

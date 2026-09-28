@@ -479,6 +479,9 @@ export function useRoomSocket(opts: Options) {
     return true;
   }, []);
 
+  const friendGroupsRef = useRef(friendGroups);
+  friendGroupsRef.current = friendGroups;
+
   const applyGroupAck = useCallback(
     (ack: {
       ok: boolean;
@@ -545,10 +548,13 @@ export function useRoomSocket(opts: Options) {
   );
 
   const createFriendGroup = useCallback(
-    async (name: string) => {
+    async (name: string): Promise<string | false> => {
       setFriendError(null);
+      const before = new Set(friendGroupsRef.current.map((g) => g.id));
       const ack = await emitFriendGroup(SocketEvents.FriendGroupCreate, { name });
-      return applyGroupAck(ack);
+      if (!applyGroupAck(ack)) return false;
+      const created = (ack.groups ?? []).find((g) => !before.has(g.id));
+      return created?.id ?? false;
     },
     [applyGroupAck, emitFriendGroup],
   );
