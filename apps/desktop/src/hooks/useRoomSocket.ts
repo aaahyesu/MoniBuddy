@@ -80,7 +80,8 @@ export function useRoomSocket(opts: Options) {
     }
     void (async () => {
       const visible = await invokeSafe<boolean>("is_overlay_user_visible");
-      // null = 비-Tauri(브라우저 미리보기) → 토스트 생략
+      // 오버레이가 보이면 캐릭터 말풍선만 / 숨김일 때만 토스트
+      // (설정 창 열림 여부와 무관)
       if (visible === false) {
         await invokeSafe("show_invite_toast");
       } else {

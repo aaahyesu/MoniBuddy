@@ -49,18 +49,17 @@ fn set_click_through(app: AppHandle, enabled: bool) -> Result<(), String> {
         .get_webview_window("overlay")
         .ok_or_else(|| "overlay window missing".to_string())?;
 
-    // 영역 선택 중 캐릭터 위에서 클릭 통과가 꺼지면 SnippingTool이 마우스를 뺏겨
-    // 캡처보드/토스트가 안 뜸 → 이 동안은 항상 통과 유지
+    let settings_open = app
+        .get_webview_window("settings")
+        .and_then(|w| w.is_visible().ok())
+        .unwrap_or(false);
+
+    // 영역 선택 중에는 항상 클릭 통과 (캡처 도구가 마우스를 받아야 함)
     let enabled = if IN_REGION_SELECT.load(Ordering::SeqCst) {
         true
     } else {
         enabled
     };
-
-    let settings_open = app
-        .get_webview_window("settings")
-        .and_then(|w| w.is_visible().ok())
-        .unwrap_or(false);
 
     let next = if enabled { 1 } else { 0 };
     let prev = CLICK_THROUGH.swap(next, Ordering::SeqCst);
@@ -69,18 +68,16 @@ fn set_click_through(app: AppHandle, enabled: bool) -> Result<(), String> {
             .set_ignore_cursor_events(enabled)
             .map_err(|e| e.to_string())?;
     }
-    // ignore_cursor 전환이 z-order를 떨어뜨릴 수 있어 최상단 재적용.
-    // 단, 설정 창이 열려 있으면 오버레이 promote로 설정을 덮어 가이드가
-    // 깜빡이거나 클릭이 먹통이 되므로 설정을 위에 유지한다.
+
+    // 설정 창이 열려 있으면 overlay z-promote로 설정을 덮지 않음
+    // (초대 말풍선 히트 시 JS가 enabled=false로 넘기면 말풍선 클릭 가능)
+    if settings_open {
+        return Ok(());
+    }
+
     if YIELD_STATE.load(Ordering::SeqCst) == 0 && OVERLAY_USER_VISIBLE.load(Ordering::SeqCst) {
         let _ = overlay.set_always_on_top(true);
-        if settings_open {
-            if let Some(settings) = app.get_webview_window("settings") {
-                let _ = settings.set_always_on_top(true);
-            }
-        } else {
-            promote_overlay_zorder(&overlay);
-        }
+        promote_overlay_zorder(&overlay);
     }
     Ok(())
 }
@@ -88,7 +85,7 @@ fn set_click_through(app: AppHandle, enabled: bool) -> Result<(), String> {
 #[tauri::command]
 fn show_settings(app: AppHandle) -> Result<(), String> {
     // 오버레이 alwaysOnTop은 유지 — 끄면 다른 일반 앱에 가려짐.
-    // 설정 창도 alwaysOnTop + focus로 오버레이 위에 올림.
+    // 설정은 마지막에 올려 오버레이 위에 둔다 (restore_overlay로 다시 덮지 않음).
 
     let created = app.get_webview_window("settings").is_none();
     let win = match app.get_webview_window("settings") {
@@ -106,14 +103,14 @@ fn show_settings(app: AppHandle) -> Result<(), String> {
     }
 
     let _ = win.unminimize();
+    // 클릭은 설정으로 통과되도록 오버레이 ignore 유지
+    if let Some(overlay) = app.get_webview_window("overlay") {
+        let _ = overlay.set_ignore_cursor_events(true);
+        CLICK_THROUGH.store(1, Ordering::SeqCst);
+    }
     let _ = win.set_always_on_top(true);
     win.show().map_err(|e| e.to_string())?;
     win.set_focus().map_err(|e| e.to_string())?;
-    // 오버레이 topmost 스타일은 유지하되, 마지막에 설정을 다시 올려
-    // 가이드/설정 UI가 오버레이 promote에 가리지 않게 함
-    restore_overlay_topmost(&app);
-    let _ = win.set_always_on_top(true);
-    let _ = win.set_focus();
     Ok(())
 }
 
@@ -155,6 +152,7 @@ fn toggle_overlay(app: AppHandle, visible: bool) -> Result<(), String> {
         .get_webview_window("overlay")
         .ok_or_else(|| "overlay window missing".to_string())?;
     if visible {
+        // 오버레이가 보이면 초대는 캐릭터 말풍선으로 — 토스트 불필요
         hide_invite_toast_window(&app);
         if YIELD_STATE.load(Ordering::SeqCst) == 0 {
             restore_overlay_foreground(&overlay);
@@ -175,6 +173,13 @@ fn flip_overlay_visibility(app: AppHandle) -> Result<bool, String> {
 #[tauri::command]
 fn is_overlay_user_visible() -> bool {
     OVERLAY_USER_VISIBLE.load(Ordering::SeqCst)
+}
+
+#[tauri::command]
+fn is_settings_visible(app: AppHandle) -> bool {
+    app.get_webview_window("settings")
+        .and_then(|w| w.is_visible().ok())
+        .unwrap_or(false)
 }
 
 fn hide_invite_toast_window(app: &AppHandle) {
@@ -215,8 +220,10 @@ fn show_invite_toast(app: AppHandle) -> Result<(), String> {
         let _ = win.set_position(tauri::PhysicalPosition::new(x, y));
     }
 
+    // 설정/오버레이 alwaysOnTop과 싸울 때 토스트가 가장 위에 오도록
     let _ = win.set_always_on_top(true);
     win.show().map_err(|e| e.to_string())?;
+    promote_window_zorder(&win);
     Ok(())
 }
 
@@ -336,13 +343,13 @@ fn apply_capture_yield(app: &AppHandle, should_yield: bool) {
 fn restore_overlay_foreground(overlay: &tauri::WebviewWindow) {
     let _ = overlay.show();
     let _ = overlay.set_always_on_top(true);
-    promote_overlay_zorder(overlay);
+    promote_window_zorder(overlay);
     let _ = overlay.set_ignore_cursor_events(true);
     CLICK_THROUGH.store(255, Ordering::SeqCst);
 }
 
 #[cfg(windows)]
-fn promote_overlay_zorder(overlay: &tauri::WebviewWindow) {
+fn promote_window_zorder(win: &tauri::WebviewWindow) {
     #[link(name = "user32")]
     extern "system" {
         fn SetWindowPos(
@@ -366,7 +373,7 @@ fn promote_overlay_zorder(overlay: &tauri::WebviewWindow) {
     const SWP_SHOWWINDOW: u32 = 0x0040;
     const SWP_FRAMECHANGED: u32 = 0x0020;
 
-    let Ok(hwnd) = overlay.hwnd() else {
+    let Ok(hwnd) = win.hwnd() else {
         return;
     };
     let hwnd = hwnd.0 as isize;
@@ -386,8 +393,11 @@ fn promote_overlay_zorder(overlay: &tauri::WebviewWindow) {
 }
 
 #[cfg(not(windows))]
-fn promote_overlay_zorder(_overlay: &tauri::WebviewWindow) {}
+fn promote_window_zorder(_win: &tauri::WebviewWindow) {}
 
+fn promote_overlay_zorder(overlay: &tauri::WebviewWindow) {
+    promote_window_zorder(overlay);
+}
 /// 캡처 세션 중 강제 표시 (양보 상태와 무관하게 show + topmost)
 fn force_overlay_visible_for_capture(app: &AppHandle) {
     YIELD_STATE.store(0, Ordering::SeqCst);
@@ -706,6 +716,7 @@ pub fn run() {
             toggle_overlay,
             flip_overlay_visibility,
             is_overlay_user_visible,
+            is_settings_visible,
             show_invite_toast,
             hide_invite_toast,
             get_cursor_pos,

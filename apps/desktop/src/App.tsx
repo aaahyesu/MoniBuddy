@@ -79,11 +79,12 @@ export function App() {
           guide.dismiss();
           return;
         }
+        // 방 안이어도 가이드 앵커는 로비 기준
         setScreen("lobby");
-        // 클릭 이벤트 종료 후 열어, 딤 레이어가 같은 클릭으로 바로 닫히는 것 방지
+        // 클릭 종료 후 오픈. 이미 설정 창이므로 show_settings 재호출로
+        // z-order를 흔들지 않음 (무한 깜빡임 원인)
         window.setTimeout(() => {
           guide.start("settings", 0);
-          void invokeSafe("show_settings");
         }, 40);
       },
     }),
@@ -163,13 +164,19 @@ export function App() {
 
   useEffect(() => {
     persistActiveRoom(room.roomCode);
-    if (room.roomCode && (screen === "lobby" || screen === null)) {
+    // 가이드 중엔 로비 앵커를 위해 lobby에 머무름 — room 강제 복귀가
+    // lobby↔room 무한 전환(창 깜빡임)을 만듦
+    if (
+      room.roomCode &&
+      (screen === "lobby" || screen === null) &&
+      !guide.session?.active
+    ) {
       setScreen("room");
     }
     if (!room.roomCode && screen === "room") {
       setScreen("lobby");
     }
-  }, [room.roomCode, screen]);
+  }, [room.roomCode, screen, guide.session?.active]);
 
   // Overlay invite accept / dismiss
   useEffect(() => {
