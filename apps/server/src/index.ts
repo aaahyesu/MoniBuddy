@@ -275,6 +275,12 @@ io.on("connection", (socket) => {
       socketRoom.set(socket.id, code);
       void socket.join(code);
       ack?.({ ok: true, memberId, room: snapshot(room) });
+      socket.to(code).emit(SocketEvents.RoomNotice, {
+        type: "member-join",
+        nickname: member.nickname,
+        memberId,
+        at: Date.now(),
+      });
       broadcastSync(room);
     } catch (err) {
       ack?.({ ok: false, error: err instanceof Error ? err.message : "join failed" });
