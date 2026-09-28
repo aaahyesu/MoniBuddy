@@ -57,6 +57,11 @@ fn set_click_through(app: AppHandle, enabled: bool) -> Result<(), String> {
         enabled
     };
 
+    let settings_open = app
+        .get_webview_window("settings")
+        .and_then(|w| w.is_visible().ok())
+        .unwrap_or(false);
+
     let next = if enabled { 1 } else { 0 };
     let prev = CLICK_THROUGH.swap(next, Ordering::SeqCst);
     if prev != next {
@@ -64,10 +69,18 @@ fn set_click_through(app: AppHandle, enabled: bool) -> Result<(), String> {
             .set_ignore_cursor_events(enabled)
             .map_err(|e| e.to_string())?;
     }
-    // ignore_cursor 전환이 z-order를 떨어뜨릴 수 있어 매번 최상단 재적용
+    // ignore_cursor 전환이 z-order를 떨어뜨릴 수 있어 최상단 재적용.
+    // 단, 설정 창이 열려 있으면 오버레이 promote로 설정을 덮어 가이드가
+    // 깜빡이거나 클릭이 먹통이 되므로 설정을 위에 유지한다.
     if YIELD_STATE.load(Ordering::SeqCst) == 0 && OVERLAY_USER_VISIBLE.load(Ordering::SeqCst) {
         let _ = overlay.set_always_on_top(true);
-        promote_overlay_zorder(&overlay);
+        if settings_open {
+            if let Some(settings) = app.get_webview_window("settings") {
+                let _ = settings.set_always_on_top(true);
+            }
+        } else {
+            promote_overlay_zorder(&overlay);
+        }
     }
     Ok(())
 }
@@ -96,8 +109,11 @@ fn show_settings(app: AppHandle) -> Result<(), String> {
     let _ = win.set_always_on_top(true);
     win.show().map_err(|e| e.to_string())?;
     win.set_focus().map_err(|e| e.to_string())?;
-    // 설정 연 뒤에도 오버레이 topmost 스타일 유지
+    // 오버레이 topmost 스타일은 유지하되, 마지막에 설정을 다시 올려
+    // 가이드/설정 UI가 오버레이 promote에 가리지 않게 함
     restore_overlay_topmost(&app);
+    let _ = win.set_always_on_top(true);
+    let _ = win.set_focus();
     Ok(())
 }
 

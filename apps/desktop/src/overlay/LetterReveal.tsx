@@ -11,9 +11,12 @@ type Phase = "icon" | "opening" | "revealed";
 type Props = {
   letter: LetterItem;
   onDismiss: () => void;
+  onPhaseChange?: (phase: Phase) => void;
 };
 
-const OPEN_MS = 3200;
+const OPEN_MS = 1400;
+const ICON_TTL_MS = 10000;
+const REVEALED_TTL_MS = 4500;
 
 const CONFETTI = ["#55ddff", "#ff4d88", "#ffe14d", "#fff", "#c084fc", "#fb7185", "#4ade80"];
 
@@ -35,7 +38,7 @@ function buildParticles(seed: string) {
       id: `${seed}-rise-${i}`,
       color: CONFETTI[h % CONFETTI.length],
       left: 8 + (h % 84),
-      delay: 0.9 + (h % 1200) / 1000,
+      delay: 0.25 + (h % 700) / 1000,
       duration: 1.6 + (h % 800) / 1000,
       size: 6 + (h % 7),
       heart: h % 6 === 0,
@@ -188,7 +191,7 @@ function PixelEnvelope({
     const frame = (t: number) => {
       if (!start) start = t;
       const elapsed = t - start;
-      flapRef.current = opening ? Math.min(1, elapsed / 2400) : 0;
+      flapRef.current = opening ? Math.min(1, elapsed / 1100) : 0;
       ctx.imageSmoothingEnabled = false;
       drawPixelEnvelope(ctx, unit, flapRef.current);
       if (opening && flapRef.current < 1) raf = requestAnimationFrame(frame);
@@ -209,11 +212,15 @@ function PixelEnvelope({
   );
 }
 
-export function LetterReveal({ letter, onDismiss }: Props) {
+export function LetterReveal({ letter, onDismiss, onPhaseChange }: Props) {
   const [phase, setPhase] = useState<Phase>("icon");
   const particles = useMemo(() => buildParticles(letter.id), [letter.id]);
   const fanfare = useMemo(() => buildFanfare(letter.id), [letter.id]);
   const fanfarePlayed = useRef(false);
+  const onPhaseChangeRef = useRef(onPhaseChange);
+  const onDismissRef = useRef(onDismiss);
+  onPhaseChangeRef.current = onPhaseChange;
+  onDismissRef.current = onDismiss;
 
   useEffect(() => {
     setPhase("icon");
@@ -221,10 +228,26 @@ export function LetterReveal({ letter, onDismiss }: Props) {
   }, [letter.id]);
 
   useEffect(() => {
+    onPhaseChangeRef.current?.(phase);
+  }, [phase]);
+
+  useEffect(() => {
+    if (phase !== "icon") return;
+    const t = window.setTimeout(() => onDismissRef.current(), ICON_TTL_MS);
+    return () => window.clearTimeout(t);
+  }, [phase, letter.id]);
+
+  useEffect(() => {
     if (phase !== "opening") return;
     const t = window.setTimeout(() => setPhase("revealed"), OPEN_MS);
     return () => window.clearTimeout(t);
   }, [phase]);
+
+  useEffect(() => {
+    if (phase !== "revealed") return;
+    const t = window.setTimeout(() => onDismissRef.current(), REVEALED_TTL_MS);
+    return () => window.clearTimeout(t);
+  }, [phase, letter.id]);
 
   useEffect(() => {
     if (phase !== "revealed" || fanfarePlayed.current) return;

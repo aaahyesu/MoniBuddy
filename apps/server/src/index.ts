@@ -311,11 +311,13 @@ io.on("connection", (socket) => {
         return;
       }
       const target = [...room.members.values()].find(
-        (m) => m.nickname.trim().toLowerCase() === targetNick.trim().toLowerCase(),
+        (m) =>
+          m.nickname.trim().toLowerCase() === targetNick.trim().toLowerCase(),
       );
       if (!target) return;
+      // 지정 대상만 (보낸 사람은 제외)
       for (const [sid, mid] of room.socketToMember) {
-        if (mid === target.id || mid === member.id) {
+        if (mid === target.id) {
           io.to(sid).emit(SocketEvents.ChatBroadcast, message);
         }
       }
