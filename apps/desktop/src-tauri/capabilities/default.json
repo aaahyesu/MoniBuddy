@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Default capabilities",
-  "windows": ["settings", "overlay"],
+  "windows": ["settings", "overlay", "invite-toast"],
   "permissions": [
     "core:default",
     "core:window:allow-show",
@@ -11,6 +11,8 @@
     "core:window:allow-unminimize",
     "core:window:allow-set-ignore-cursor-events",
     "core:window:allow-set-always-on-top",
+    "core:window:allow-set-position",
+    "core:window:allow-set-size",
     "core:window:allow-outer-position",
     "core:window:allow-outer-size",
     "core:window:allow-is-visible",

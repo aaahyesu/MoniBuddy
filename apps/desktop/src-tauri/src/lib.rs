@@ -139,6 +139,7 @@ fn toggle_overlay(app: AppHandle, visible: bool) -> Result<(), String> {
         .get_webview_window("overlay")
         .ok_or_else(|| "overlay window missing".to_string())?;
     if visible {
+        hide_invite_toast_window(&app);
         if YIELD_STATE.load(Ordering::SeqCst) == 0 {
             restore_overlay_foreground(&overlay);
         }
@@ -153,6 +154,54 @@ fn flip_overlay_visibility(app: AppHandle) -> Result<bool, String> {
     let next = !OVERLAY_USER_VISIBLE.load(Ordering::SeqCst);
     toggle_overlay(app, next)?;
     Ok(next)
+}
+
+#[tauri::command]
+fn is_overlay_user_visible() -> bool {
+    OVERLAY_USER_VISIBLE.load(Ordering::SeqCst)
+}
+
+fn hide_invite_toast_window(app: &AppHandle) {
+    if let Some(win) = app.get_webview_window("invite-toast") {
+        let _ = win.hide();
+    }
+}
+
+#[tauri::command]
+fn hide_invite_toast(app: AppHandle) -> Result<(), String> {
+    hide_invite_toast_window(&app);
+    Ok(())
+}
+
+#[tauri::command]
+fn show_invite_toast(app: AppHandle) -> Result<(), String> {
+    let win = app
+        .get_webview_window("invite-toast")
+        .ok_or_else(|| "invite-toast window missing".to_string())?;
+
+    let logical_w = 360.0;
+    let logical_h = 168.0;
+    let margin = 20.0;
+    let taskbar_pad = 48.0;
+
+    let _ = win.set_size(tauri::LogicalSize::new(logical_w, logical_h));
+
+    if let Ok(Some(monitor)) = app.primary_monitor() {
+        let screen = monitor.size();
+        let origin = monitor.position();
+        let scale = monitor.scale_factor();
+        let pw = (logical_w * scale).round() as i32;
+        let ph = (logical_h * scale).round() as i32;
+        let pm = (margin * scale).round() as i32;
+        let tb = (taskbar_pad * scale).round() as i32;
+        let x = origin.x + screen.width as i32 - pw - pm;
+        let y = origin.y + screen.height as i32 - ph - pm - tb;
+        let _ = win.set_position(tauri::PhysicalPosition::new(x, y));
+    }
+
+    let _ = win.set_always_on_top(true);
+    win.show().map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -640,6 +689,9 @@ pub fn run() {
             show_settings,
             toggle_overlay,
             flip_overlay_visibility,
+            is_overlay_user_visible,
+            show_invite_toast,
+            hide_invite_toast,
             get_cursor_pos,
             is_capture_freeze
         ])
@@ -673,6 +725,7 @@ pub fn run() {
                             let show = !OVERLAY_USER_VISIBLE.load(Ordering::SeqCst);
                             OVERLAY_USER_VISIBLE.store(show, Ordering::SeqCst);
                             if show {
+                                hide_invite_toast_window(app);
                                 if YIELD_STATE.load(Ordering::SeqCst) == 0 {
                                     restore_overlay_foreground(&overlay);
                                 }

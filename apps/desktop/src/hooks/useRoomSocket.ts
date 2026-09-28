@@ -18,6 +18,7 @@ import {
   writeOverlayNotice,
   writePendingInvite,
 } from "../lib/overlayBridge";
+import { invokeSafe } from "../lib/tauri";
 
 type Options = {
   serverUrl: string;
@@ -73,6 +74,19 @@ export function useRoomSocket(opts: Options) {
   const setPendingInvite = useCallback((invite: FriendInviteRecvPayload | null) => {
     setPendingInviteState(invite);
     writePendingInvite(invite);
+    if (!invite) {
+      void invokeSafe("hide_invite_toast");
+      return;
+    }
+    void (async () => {
+      const visible = await invokeSafe<boolean>("is_overlay_user_visible");
+      // null = 비-Tauri(브라우저 미리보기) → 토스트 생략
+      if (visible === false) {
+        await invokeSafe("show_invite_toast");
+      } else {
+        await invokeSafe("hide_invite_toast");
+      }
+    })();
   }, []);
 
   // 60초 무응답 초대 만료
