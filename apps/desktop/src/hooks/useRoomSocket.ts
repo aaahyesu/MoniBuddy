@@ -4,6 +4,7 @@ import {
   type Character,
   type CharState,
   type ChatMessage,
+  type FriendGroup,
   type FriendInfo,
   type FriendInviteRecvPayload,
   type Member,
@@ -37,6 +38,7 @@ export function useRoomSocket(opts: Options) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [friends, setFriends] = useState<FriendInfo[]>([]);
+  const [friendGroups, setFriendGroups] = useState<FriendGroup[]>([]);
   const [friendError, setFriendError] = useState<string | null>(null);
   const [pendingInvite, setPendingInvite] =
     useState<FriendInviteRecvPayload | null>(null);
@@ -83,6 +85,7 @@ export function useRoomSocket(opts: Options) {
         setResolvedFriendCode(ack.friendCode);
         setResolvedUserId(ack.userId);
         setFriends(ack.friends ?? []);
+        setFriendGroups(ack.groups ?? []);
         setFriendsReady(true);
         setFriendError(null);
       },
@@ -205,8 +208,12 @@ export function useRoomSocket(opts: Options) {
           ),
         );
       };
-      const onFriendSync = (payload: { friends: FriendInfo[] }) => {
+      const onFriendSync = (payload: {
+        friends: FriendInfo[];
+        groups?: FriendGroup[];
+      }) => {
         setFriends(payload.friends ?? []);
+        if (payload.groups) setFriendGroups(payload.groups);
       };
       const onFriendPresence = (payload: {
         userId: string;
@@ -428,6 +435,7 @@ export function useRoomSocket(opts: Options) {
     const ack = await new Promise<{
       ok: boolean;
       friends?: FriendInfo[];
+      groups?: FriendGroup[];
       error?: string;
     }>((resolve) => {
       socket.emit(SocketEvents.FriendAdd, { friendCode: code }, resolve);
@@ -446,6 +454,7 @@ export function useRoomSocket(opts: Options) {
       return false;
     }
     setFriends(ack.friends ?? []);
+    if (ack.groups) setFriendGroups(ack.groups);
     return true;
   }, [friendsReady]);
 
@@ -456,6 +465,7 @@ export function useRoomSocket(opts: Options) {
     const ack = await new Promise<{
       ok: boolean;
       friends?: FriendInfo[];
+      groups?: FriendGroup[];
       error?: string;
     }>((resolve) => {
       socket.emit(SocketEvents.FriendRemove, { userId }, resolve);
@@ -465,8 +475,118 @@ export function useRoomSocket(opts: Options) {
       return false;
     }
     setFriends(ack.friends ?? []);
+    if (ack.groups) setFriendGroups(ack.groups);
     return true;
   }, []);
+
+  const applyGroupAck = useCallback(
+    (ack: {
+      ok: boolean;
+      friends?: FriendInfo[];
+      groups?: FriendGroup[];
+      error?: string;
+    }) => {
+      if (!ack?.ok) {
+        setFriendError(ack?.error ?? "그룹 작업 실패");
+        return false;
+      }
+      setFriends(ack.friends ?? []);
+      if (ack.groups) setFriendGroups(ack.groups);
+      return true;
+    },
+    [],
+  );
+
+  const emitFriendGroup = useCallback(
+    (
+      event: string,
+      payload: Record<string, unknown>,
+    ): Promise<{
+      ok: boolean;
+      friends?: FriendInfo[];
+      groups?: FriendGroup[];
+      error?: string;
+    }> => {
+      const socket = socketRef.current;
+      if (!socket?.connected) {
+        return Promise.resolve({ ok: false, error: "서버에 연결되지 않았어요" });
+      }
+      return new Promise((resolve) => {
+        let settled = false;
+        const done = (ack: {
+          ok: boolean;
+          friends?: FriendInfo[];
+          groups?: FriendGroup[];
+          error?: string;
+        }) => {
+          if (settled) return;
+          settled = true;
+          resolve(ack);
+        };
+        const timer = window.setTimeout(() => {
+          done({
+            ok: false,
+            error:
+              "서버가 그룹 기능을 아직 지원하지 않아요. 서버 배포 후 다시 시도해 주세요",
+          });
+        }, 8000);
+        socket.emit(event, payload, (ack: {
+          ok: boolean;
+          friends?: FriendInfo[];
+          groups?: FriendGroup[];
+          error?: string;
+        }) => {
+          window.clearTimeout(timer);
+          done(ack ?? { ok: false, error: "그룹 작업 실패" });
+        });
+      });
+    },
+    [],
+  );
+
+  const createFriendGroup = useCallback(
+    async (name: string) => {
+      setFriendError(null);
+      const ack = await emitFriendGroup(SocketEvents.FriendGroupCreate, { name });
+      return applyGroupAck(ack);
+    },
+    [applyGroupAck, emitFriendGroup],
+  );
+
+  const renameFriendGroup = useCallback(
+    async (groupId: string, name: string) => {
+      setFriendError(null);
+      const ack = await emitFriendGroup(SocketEvents.FriendGroupRename, {
+        groupId,
+        name,
+      });
+      return applyGroupAck(ack);
+    },
+    [applyGroupAck, emitFriendGroup],
+  );
+
+  const deleteFriendGroup = useCallback(
+    async (groupId: string) => {
+      setFriendError(null);
+      const ack = await emitFriendGroup(SocketEvents.FriendGroupDelete, {
+        groupId,
+      });
+      return applyGroupAck(ack);
+    },
+    [applyGroupAck, emitFriendGroup],
+  );
+
+  const assignFriendGroup = useCallback(
+    async (friendUserId: string, groupIds: string[]) => {
+      setFriendError(null);
+      const ack = await emitFriendGroup(SocketEvents.FriendGroupAssign, {
+        friendUserId,
+        groupIds,
+      });
+      return applyGroupAck(ack);
+    },
+    [applyGroupAck, emitFriendGroup],
+  );
 
   const inviteFriend = useCallback(
     async (toUserId: string) => {
@@ -526,6 +646,7 @@ export function useRoomSocket(opts: Options) {
     messages,
     error,
     friends,
+    friendGroups,
     friendError,
     pendingInvite,
     resolvedFriendCode,
@@ -541,6 +662,10 @@ export function useRoomSocket(opts: Options) {
     addFriend,
     removeFriend,
     inviteFriend,
+    createFriendGroup,
+    renameFriendGroup,
+    deleteFriendGroup,
+    assignFriendGroup,
     setPendingInvite,
     setFriendError,
   };

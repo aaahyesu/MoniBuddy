@@ -1,6 +1,7 @@
 import { APP_NAME } from "@monibuddy/shared";
 import type {
   Character,
+  FriendGroup,
   FriendInfo,
   FriendInviteRecvPayload,
 } from "@monibuddy/shared";
@@ -23,6 +24,7 @@ type Props = {
   overlayHotkey?: string;
   myFriendCode: string;
   friends: FriendInfo[];
+  friendGroups: FriendGroup[];
   friendError: string | null;
   pendingInvite: FriendInviteRecvPayload | null;
   onEditProfile: () => void;
@@ -34,6 +36,13 @@ type Props = {
   onInviteFriend: (userId: string) => void;
   onAcceptInvite: () => void;
   onDismissInvite: () => void;
+  onCreateGroup: (name: string) => void | Promise<boolean | void>;
+  onRenameGroup: (groupId: string, name: string) => void | Promise<boolean | void>;
+  onDeleteGroup: (groupId: string) => void | Promise<boolean | void>;
+  onAssignGroup: (
+    friendUserId: string,
+    groupIds: string[],
+  ) => void | Promise<boolean | void>;
   guideToggle?: { active: boolean; onClick: () => void };
 };
 
@@ -50,6 +59,7 @@ export function RoomLobby({
   overlayHotkey = "",
   myFriendCode,
   friends,
+  friendGroups,
   friendError,
   pendingInvite,
   onEditProfile,
@@ -61,6 +71,10 @@ export function RoomLobby({
   onInviteFriend,
   onAcceptInvite,
   onDismissInvite,
+  onCreateGroup,
+  onRenameGroup,
+  onDeleteGroup,
+  onAssignGroup,
   guideToggle,
 }: Props) {
   return (
@@ -109,6 +123,7 @@ export function RoomLobby({
       <FriendsPanel
         myFriendCode={myFriendCode}
         friends={friends}
+        groups={friendGroups}
         connected={connected}
         friendsReady={friendsReady}
         roomCode={roomCode}
@@ -121,6 +136,10 @@ export function RoomLobby({
         onInviteFriend={onInviteFriend}
         onAcceptInvite={onAcceptInvite}
         onDismissInvite={onDismissInvite}
+        onCreateGroup={onCreateGroup}
+        onRenameGroup={onRenameGroup}
+        onDeleteGroup={onDeleteGroup}
+        onAssignGroup={onAssignGroup}
       />
 
       <div className="h-px w-full bg-white opacity-85" />

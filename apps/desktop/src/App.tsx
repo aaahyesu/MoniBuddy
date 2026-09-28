@@ -452,6 +452,7 @@ export function App() {
           members={room.members}
           myFriendCode={room.resolvedFriendCode || device.friendCode}
           friends={room.friends}
+          friendGroups={room.friendGroups}
           connected={room.connected}
           friendsReady={room.friendsReady}
           friendError={room.friendError}
@@ -480,6 +481,12 @@ export function App() {
             });
           }}
           onDismissInvite={() => room.setPendingInvite(null)}
+          onCreateGroup={(name) => room.createFriendGroup(name)}
+          onRenameGroup={(groupId, name) => room.renameFriendGroup(groupId, name)}
+          onDeleteGroup={(groupId) => room.deleteFriendGroup(groupId)}
+          onAssignGroup={(friendUserId, groupIds) =>
+            room.assignFriendGroup(friendUserId, groupIds)
+          }
           guideToggle={guideToggle}
         />
         {guideLayer}
@@ -502,6 +509,7 @@ export function App() {
         overlayHotkey={profile.overlayHotkey}
         myFriendCode={room.resolvedFriendCode || device.friendCode}
         friends={room.friends}
+        friendGroups={room.friendGroups}
         friendError={room.friendError}
         pendingInvite={room.pendingInvite}
         onEditProfile={() => setScreen("profile")}
@@ -533,6 +541,12 @@ export function App() {
           });
         }}
         onDismissInvite={() => room.setPendingInvite(null)}
+        onCreateGroup={(name) => room.createFriendGroup(name)}
+        onRenameGroup={(groupId, name) => room.renameFriendGroup(groupId, name)}
+        onDeleteGroup={(groupId) => room.deleteFriendGroup(groupId)}
+        onAssignGroup={(friendUserId, groupIds) =>
+          room.assignFriendGroup(friendUserId, groupIds)
+        }
         guideToggle={guideToggle}
       />
       <div className="fixed bottom-3 right-3 flex gap-2 opacity-75">

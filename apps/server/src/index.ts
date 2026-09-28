@@ -14,6 +14,13 @@ import {
   ChatSendPayload,
   FriendAddAck,
   FriendAddPayload,
+  FriendGroup,
+  FriendGroupAck,
+  FriendGroupAssignPayload,
+  FriendGroupCreatePayload,
+  FriendGroupDeletePayload,
+  FriendGroupRenamePayload,
+  FriendInfo,
   FriendInviteAck,
   FriendInvitePayload,
   FriendInviteRecvPayload,
@@ -348,12 +355,16 @@ io.on("connection", (socket) => {
           character: payload.character,
         });
         friends.setOnline(socket.id, user);
-        const list = await friends.listFriends(user.userId);
+        const [list, groups] = await Promise.all([
+          friends.listFriends(user.userId),
+          friends.listGroups(user.userId),
+        ]);
         ack?.({
           ok: true,
           userId: user.userId,
           friendCode: user.friendCode,
           friends: list,
+          groups,
         });
         const presence: FriendPresencePayload = {
           userId: user.userId,
@@ -390,12 +401,20 @@ io.on("connection", (socket) => {
           if (other) {
             const otherSocket = friends.getPresence(other.userId)?.socketId;
             if (otherSocket) {
+              const [friendsList, groups] = await Promise.all([
+                friends.listFriends(other.userId),
+                friends.listGroups(other.userId),
+              ]);
               io.to(otherSocket).emit(SocketEvents.FriendSync, {
-                friends: await friends.listFriends(other.userId),
+                friends: friendsList,
+                groups,
               });
             }
           }
-          socket.emit(SocketEvents.FriendSync, { friends: result.friends });
+          socket.emit(SocketEvents.FriendSync, {
+            friends: result.friends,
+            groups: result.groups,
+          });
         }
       } catch (err) {
         ack?.({
@@ -419,11 +438,19 @@ io.on("connection", (socket) => {
         const result = await friends.removeFriend(myId, targetId);
         ack?.(result);
         if (result.ok) {
-          socket.emit(SocketEvents.FriendSync, { friends: result.friends });
+          socket.emit(SocketEvents.FriendSync, {
+            friends: result.friends,
+            groups: result.groups,
+          });
           const otherSocket = friends.getPresence(targetId)?.socketId;
           if (otherSocket) {
+            const [friendsList, groups] = await Promise.all([
+              friends.listFriends(targetId),
+              friends.listGroups(targetId),
+            ]);
             io.to(otherSocket).emit(SocketEvents.FriendSync, {
-              friends: await friends.listFriends(targetId),
+              friends: friendsList,
+              groups,
             });
           }
         }
@@ -431,6 +458,143 @@ io.on("connection", (socket) => {
         ack?.({
           ok: false,
           error: err instanceof Error ? err.message : "friend remove failed",
+        });
+      }
+    },
+  );
+
+  const emitOwnFriendSync = (
+    sid: string,
+    payload: { friends: FriendInfo[]; groups: FriendGroup[] },
+  ) => {
+    io.to(sid).emit(SocketEvents.FriendSync, payload);
+  };
+
+  socket.on(
+    SocketEvents.FriendGroupCreate,
+    async (
+      payload: FriendGroupCreatePayload,
+      ack?: (r: FriendGroupAck) => void,
+    ) => {
+      try {
+        const myId = friends.getUserIdBySocket(socket.id);
+        if (!myId) {
+          ack?.({ ok: false, error: "not registered" });
+          return;
+        }
+        const result = await friends.createGroup(myId, String(payload?.name ?? ""));
+        ack?.(result);
+        if (result.ok) {
+          emitOwnFriendSync(socket.id, {
+            friends: result.friends,
+            groups: result.groups,
+          });
+        }
+      } catch (err) {
+        ack?.({
+          ok: false,
+          error: err instanceof Error ? err.message : "group create failed",
+        });
+      }
+    },
+  );
+
+  socket.on(
+    SocketEvents.FriendGroupRename,
+    async (
+      payload: FriendGroupRenamePayload,
+      ack?: (r: FriendGroupAck) => void,
+    ) => {
+      try {
+        const myId = friends.getUserIdBySocket(socket.id);
+        if (!myId) {
+          ack?.({ ok: false, error: "not registered" });
+          return;
+        }
+        const result = await friends.renameGroup(
+          myId,
+          String(payload?.groupId ?? ""),
+          String(payload?.name ?? ""),
+        );
+        ack?.(result);
+        if (result.ok) {
+          emitOwnFriendSync(socket.id, {
+            friends: result.friends,
+            groups: result.groups,
+          });
+        }
+      } catch (err) {
+        ack?.({
+          ok: false,
+          error: err instanceof Error ? err.message : "group rename failed",
+        });
+      }
+    },
+  );
+
+  socket.on(
+    SocketEvents.FriendGroupDelete,
+    async (
+      payload: FriendGroupDeletePayload,
+      ack?: (r: FriendGroupAck) => void,
+    ) => {
+      try {
+        const myId = friends.getUserIdBySocket(socket.id);
+        if (!myId) {
+          ack?.({ ok: false, error: "not registered" });
+          return;
+        }
+        const result = await friends.deleteGroup(
+          myId,
+          String(payload?.groupId ?? ""),
+        );
+        ack?.(result);
+        if (result.ok) {
+          emitOwnFriendSync(socket.id, {
+            friends: result.friends,
+            groups: result.groups,
+          });
+        }
+      } catch (err) {
+        ack?.({
+          ok: false,
+          error: err instanceof Error ? err.message : "group delete failed",
+        });
+      }
+    },
+  );
+
+  socket.on(
+    SocketEvents.FriendGroupAssign,
+    async (
+      payload: FriendGroupAssignPayload,
+      ack?: (r: FriendGroupAck) => void,
+    ) => {
+      try {
+        const myId = friends.getUserIdBySocket(socket.id);
+        if (!myId) {
+          ack?.({ ok: false, error: "not registered" });
+          return;
+        }
+        const groupIds = Array.isArray(payload?.groupIds)
+          ? payload.groupIds.map((id) => String(id))
+          : [];
+        const result = await friends.assignGroups(
+          myId,
+          String(payload?.friendUserId ?? ""),
+          groupIds,
+        );
+        ack?.(result);
+        if (result.ok) {
+          emitOwnFriendSync(socket.id, {
+            friends: result.friends,
+            groups: result.groups,
+          });
+        }
+      } catch (err) {
+        ack?.({
+          ok: false,
+          error: err instanceof Error ? err.message : "group assign failed",
         });
       }
     },

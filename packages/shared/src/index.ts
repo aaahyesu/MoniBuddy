@@ -116,7 +116,17 @@ export const SocketEvents = {
   FriendInvite: "friend:invite",
   FriendInviteRecv: "friend:invite-recv",
   FriendPresence: "friend:presence",
+  FriendGroupCreate: "friend:group-create",
+  FriendGroupRename: "friend:group-rename",
+  FriendGroupDelete: "friend:group-delete",
+  FriendGroupAssign: "friend:group-assign",
 } as const;
+
+export type FriendGroup = {
+  id: string;
+  name: string;
+  sortOrder: number;
+};
 
 export type FriendInfo = {
   userId: string;
@@ -124,6 +134,13 @@ export type FriendInfo = {
   nickname: string;
   character: Character;
   online: boolean;
+  /** 내 목록 전용 — 여러 그룹에 속할 수 있음 (빈 배열 = 미분류) */
+  groupIds: string[];
+};
+
+export type FriendListPayload = {
+  friends: FriendInfo[];
+  groups: FriendGroup[];
 };
 
 export type PresenceHelloPayload = {
@@ -134,7 +151,13 @@ export type PresenceHelloPayload = {
 };
 
 export type PresenceHelloAck =
-  | { ok: true; userId: string; friendCode: string; friends: FriendInfo[] }
+  | {
+      ok: true;
+      userId: string;
+      friendCode: string;
+      friends: FriendInfo[];
+      groups: FriendGroup[];
+    }
   | { ok: false; error: string };
 
 export type FriendAddPayload = {
@@ -142,7 +165,7 @@ export type FriendAddPayload = {
 };
 
 export type FriendAddAck =
-  | { ok: true; friends: FriendInfo[] }
+  | { ok: true; friends: FriendInfo[]; groups: FriendGroup[] }
   | { ok: false; error: string };
 
 export type FriendRemovePayload = {
@@ -150,7 +173,30 @@ export type FriendRemovePayload = {
 };
 
 export type FriendRemoveAck =
-  | { ok: true; friends: FriendInfo[] }
+  | { ok: true; friends: FriendInfo[]; groups: FriendGroup[] }
+  | { ok: false; error: string };
+
+export type FriendGroupCreatePayload = {
+  name: string;
+};
+
+export type FriendGroupRenamePayload = {
+  groupId: string;
+  name: string;
+};
+
+export type FriendGroupDeletePayload = {
+  groupId: string;
+};
+
+export type FriendGroupAssignPayload = {
+  friendUserId: string;
+  /** 소속시킬 그룹 id 목록 (빈 배열 = 미분류) */
+  groupIds: string[];
+};
+
+export type FriendGroupAck =
+  | { ok: true; friends: FriendInfo[]; groups: FriendGroup[] }
   | { ok: false; error: string };
 
 export type FriendInvitePayload = {

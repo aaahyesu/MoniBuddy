@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { createClient, type Client } from "@libsql/client";
-import type { Character, FriendInfo } from "@monibuddy/shared";
+import type { Character, FriendGroup, FriendInfo } from "@monibuddy/shared";
 import { createFriendCode } from "@monibuddy/shared";
 
 export type StoredUser = {
@@ -26,6 +26,10 @@ type StoreFile = {
   users: Record<string, StoredUser>;
   codes: Record<string, string>;
 };
+
+function newGroupId() {
+  return `g_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
 
 /**
  * 친구 관계 영구 저장.
@@ -91,10 +95,43 @@ export class FriendStore {
           friend_id TEXT NOT NULL,
           PRIMARY KEY (user_id, friend_id)
         )`,
+        `CREATE TABLE IF NOT EXISTS friend_groups (
+          id TEXT PRIMARY KEY NOT NULL,
+          owner_id TEXT NOT NULL,
+          name TEXT NOT NULL,
+          sort_order INTEGER NOT NULL DEFAULT 0
+        )`,
+        `CREATE TABLE IF NOT EXISTS friend_group_members (
+          owner_id TEXT NOT NULL,
+          friend_id TEXT NOT NULL,
+          group_id TEXT NOT NULL,
+          PRIMARY KEY (owner_id, friend_id, group_id)
+        )`,
         `CREATE INDEX IF NOT EXISTS idx_users_friend_code ON users(friend_code)`,
+        `CREATE INDEX IF NOT EXISTS idx_friend_groups_owner ON friend_groups(owner_id)`,
+        `CREATE INDEX IF NOT EXISTS idx_fgm_owner_friend ON friend_group_members(owner_id, friend_id)`,
       ],
       "write",
     );
+    await this.migrateLegacyFriendshipGroupId();
+  }
+
+  /** friendships.group_id(단일) → friend_group_members(다대다) 1회 이전 */
+  private async migrateLegacyFriendshipGroupId() {
+    const info = await this.db.execute(`PRAGMA table_info(friendships)`);
+    const hasGroup = info.rows.some(
+      (r) => String((r as Record<string, unknown>).name ?? r[1] ?? "") === "group_id",
+    );
+    if (!hasGroup) return;
+
+    await this.db.execute({
+      sql: `INSERT OR IGNORE INTO friend_group_members (owner_id, friend_id, group_id)
+            SELECT user_id, friend_id, group_id
+            FROM friendships
+            WHERE group_id IS NOT NULL AND group_id != ''`,
+      args: [],
+    });
+    // 레거시 컬럼은 남겨 두되 더 이상 쓰지 않음 (SQLite DROP COLUMN 미지원 환경 대비)
   }
 
   /** 예전 friends.json → SQLite 1회 이전 */
@@ -331,6 +368,23 @@ export class FriendStore {
     return this.parseUser(row as unknown as Record<string, unknown>, friends);
   }
 
+  async listGroups(ownerId: string): Promise<FriendGroup[]> {
+    const rs = await this.db.execute({
+      sql: `SELECT id, name, sort_order FROM friend_groups
+            WHERE owner_id = ?
+            ORDER BY sort_order ASC, name ASC`,
+      args: [ownerId],
+    });
+    return rs.rows.map((raw) => {
+      const row = raw as Record<string, unknown>;
+      return {
+        id: String(row.id),
+        name: String(row.name),
+        sortOrder: Number(row.sort_order ?? 0),
+      };
+    });
+  }
+
   async listFriends(userId: string): Promise<FriendInfo[]> {
     const rs = await this.db.execute({
       sql: `SELECT u.user_id, u.friend_code, u.nickname, u.character_json
@@ -339,6 +393,20 @@ export class FriendStore {
             WHERE f.user_id = ?`,
       args: [userId],
     });
+    const mem = await this.db.execute({
+      sql: `SELECT friend_id, group_id FROM friend_group_members WHERE owner_id = ?`,
+      args: [userId],
+    });
+    const groupMap = new Map<string, string[]>();
+    for (const raw of mem.rows) {
+      const row = raw as Record<string, unknown>;
+      const fid = String(row.friend_id);
+      const gid = String(row.group_id);
+      const list = groupMap.get(fid) ?? [];
+      list.push(gid);
+      groupMap.set(fid, list);
+    }
+
     const out: FriendInfo[] = [];
     for (const raw of rs.rows) {
       const row = raw as Record<string, unknown>;
@@ -359,15 +427,30 @@ export class FriendStore {
         nickname: live?.nickname ?? friend.nickname,
         character: live?.character ?? friend.character,
         online: this.presence.has(friend.userId),
+        groupIds: groupMap.get(friend.userId) ?? [],
       });
     }
     return out;
   }
 
+  private async friendBundle(userId: string): Promise<{
+    friends: FriendInfo[];
+    groups: FriendGroup[];
+  }> {
+    const [friends, groups] = await Promise.all([
+      this.listFriends(userId),
+      this.listGroups(userId),
+    ]);
+    return { friends, groups };
+  }
+
   async addFriend(
     myUserId: string,
     friendCode: string,
-  ): Promise<{ ok: true; friends: FriendInfo[] } | { ok: false; error: string }> {
+  ): Promise<
+    | { ok: true; friends: FriendInfo[]; groups: FriendGroup[] }
+    | { ok: false; error: string }
+  > {
     const me = await this.getUser(myUserId);
     if (!me) return { ok: false, error: "not registered" };
     const other = await this.getUserByFriendCode(friendCode);
@@ -387,13 +470,16 @@ export class FriendStore {
       ],
       "write",
     );
-    return { ok: true, friends: await this.listFriends(myUserId) };
+    return { ok: true, ...(await this.friendBundle(myUserId)) };
   }
 
   async removeFriend(
     myUserId: string,
     friendUserId: string,
-  ): Promise<{ ok: true; friends: FriendInfo[] } | { ok: false; error: string }> {
+  ): Promise<
+    | { ok: true; friends: FriendInfo[]; groups: FriendGroup[] }
+    | { ok: false; error: string }
+  > {
     const me = await this.getUser(myUserId);
     if (!me) return { ok: false, error: "not registered" };
 
@@ -407,10 +493,133 @@ export class FriendStore {
           sql: `DELETE FROM friendships WHERE user_id = ? AND friend_id = ?`,
           args: [friendUserId, myUserId],
         },
+        {
+          sql: `DELETE FROM friend_group_members WHERE owner_id = ? AND friend_id = ?`,
+          args: [myUserId, friendUserId],
+        },
+        {
+          sql: `DELETE FROM friend_group_members WHERE owner_id = ? AND friend_id = ?`,
+          args: [friendUserId, myUserId],
+        },
       ],
       "write",
     );
-    return { ok: true, friends: await this.listFriends(myUserId) };
+    return { ok: true, ...(await this.friendBundle(myUserId)) };
+  }
+
+  async createGroup(
+    ownerId: string,
+    name: string,
+  ): Promise<
+    | { ok: true; friends: FriendInfo[]; groups: FriendGroup[] }
+    | { ok: false; error: string }
+  > {
+    const me = await this.getUser(ownerId);
+    if (!me) return { ok: false, error: "not registered" };
+    const trimmed = name.trim().slice(0, 24);
+    if (!trimmed) return { ok: false, error: "name required" };
+
+    const existing = await this.listGroups(ownerId);
+    const id = newGroupId();
+    const sortOrder =
+      existing.length === 0
+        ? 0
+        : Math.max(...existing.map((g) => g.sortOrder)) + 1;
+    await this.db.execute({
+      sql: `INSERT INTO friend_groups (id, owner_id, name, sort_order) VALUES (?, ?, ?, ?)`,
+      args: [id, ownerId, trimmed, sortOrder],
+    });
+    return { ok: true, ...(await this.friendBundle(ownerId)) };
+  }
+
+  async renameGroup(
+    ownerId: string,
+    groupId: string,
+    name: string,
+  ): Promise<
+    | { ok: true; friends: FriendInfo[]; groups: FriendGroup[] }
+    | { ok: false; error: string }
+  > {
+    const me = await this.getUser(ownerId);
+    if (!me) return { ok: false, error: "not registered" };
+    const trimmed = name.trim().slice(0, 24);
+    if (!trimmed) return { ok: false, error: "name required" };
+
+    const rs = await this.db.execute({
+      sql: `UPDATE friend_groups SET name = ? WHERE id = ? AND owner_id = ?`,
+      args: [trimmed, groupId, ownerId],
+    });
+    if (rs.rowsAffected === 0) return { ok: false, error: "group not found" };
+    return { ok: true, ...(await this.friendBundle(ownerId)) };
+  }
+
+  async deleteGroup(
+    ownerId: string,
+    groupId: string,
+  ): Promise<
+    | { ok: true; friends: FriendInfo[]; groups: FriendGroup[] }
+    | { ok: false; error: string }
+  > {
+    const me = await this.getUser(ownerId);
+    if (!me) return { ok: false, error: "not registered" };
+
+    await this.db.batch(
+      [
+        {
+          sql: `DELETE FROM friend_group_members WHERE owner_id = ? AND group_id = ?`,
+          args: [ownerId, groupId],
+        },
+        {
+          sql: `DELETE FROM friend_groups WHERE id = ? AND owner_id = ?`,
+          args: [groupId, ownerId],
+        },
+      ],
+      "write",
+    );
+    return { ok: true, ...(await this.friendBundle(ownerId)) };
+  }
+
+  async assignGroups(
+    ownerId: string,
+    friendUserId: string,
+    groupIds: string[],
+  ): Promise<
+    | { ok: true; friends: FriendInfo[]; groups: FriendGroup[] }
+    | { ok: false; error: string }
+  > {
+    const me = await this.getUser(ownerId);
+    if (!me) return { ok: false, error: "not registered" };
+
+    const edge = await this.db.execute({
+      sql: `SELECT friend_id FROM friendships WHERE user_id = ? AND friend_id = ?`,
+      args: [ownerId, friendUserId],
+    });
+    if (edge.rows.length === 0) return { ok: false, error: "not a friend" };
+
+    const unique = [...new Set(groupIds.map((id) => String(id).trim()).filter(Boolean))];
+    if (unique.length > 0) {
+      const owned = await this.listGroups(ownerId);
+      const ownedSet = new Set(owned.map((g) => g.id));
+      for (const gid of unique) {
+        if (!ownedSet.has(gid)) return { ok: false, error: "group not found" };
+      }
+    }
+
+    const stmts: { sql: string; args: (string | number | null)[] }[] = [
+      {
+        sql: `DELETE FROM friend_group_members WHERE owner_id = ? AND friend_id = ?`,
+        args: [ownerId, friendUserId],
+      },
+    ];
+    for (const gid of unique) {
+      stmts.push({
+        sql: `INSERT OR IGNORE INTO friend_group_members (owner_id, friend_id, group_id)
+              VALUES (?, ?, ?)`,
+        args: [ownerId, friendUserId, gid],
+      });
+    }
+    await this.db.batch(stmts, "write");
+    return { ok: true, ...(await this.friendBundle(ownerId)) };
   }
 
   /** 내 친구들의 소켓 ID (온라인만) */
