@@ -34,6 +34,7 @@ type Props = {
   onInviteFriend: (userId: string) => void;
   onAcceptInvite: () => void;
   onDismissInvite: () => void;
+  guideToggle?: { active: boolean; onClick: () => void };
 };
 
 export function RoomLobby({
@@ -60,15 +61,21 @@ export function RoomLobby({
   onInviteFriend,
   onAcceptInvite,
   onDismissInvite,
+  guideToggle,
 }: Props) {
   return (
     <ShellCard wide>
-      <Brand title={APP_NAME} subtitle={`HELLO, ${nickname}`} />
+      <Brand
+        title={APP_NAME}
+        subtitle={`HELLO, ${nickname}`}
+        guideToggle={guideToggle}
+      />
       <UpdateBanner />
 
       <SectionLabel tone="pink">Profile</SectionLabel>
       <button
         type="button"
+        data-guide="guide-profile"
         onClick={onEditProfile}
         className="grid w-full justify-items-center gap-3 border border-white/50 bg-black/40 p-4 transition hover:bg-black/55"
       >
@@ -119,7 +126,10 @@ export function RoomLobby({
       <div className="h-px w-full bg-white opacity-85" />
 
       {inRoom && roomCode ? (
-        <div className="grid justify-items-center gap-3 border border-white/50 bg-black/40 p-4 text-center">
+        <div
+          data-guide="guide-play-hint"
+          className="grid justify-items-center gap-3 border border-white/50 bg-black/40 p-4 text-center"
+        >
           <SectionLabel tone="orange">In Room</SectionLabel>
           <p className="m-0 text-[0.85rem] text-mute">
             초대코드{" "}
@@ -132,7 +142,10 @@ export function RoomLobby({
           </Btn>
         </div>
       ) : (
-        <div className="grid gap-2 border border-white/50 bg-black/40 p-4">
+        <div
+          data-guide="guide-play-hint"
+          className="grid gap-2 border border-white/50 bg-black/40 p-4"
+        >
           <SectionLabel tone="purple">How To Play</SectionLabel>
           <p className="m-0 text-left text-[0.82rem] leading-relaxed text-mute">
             모니터 테두리의{" "}
@@ -142,10 +155,19 @@ export function RoomLobby({
         </div>
       )}
 
-      {onShowOverlay && (
-        <Btn variant="primary" size="lg" onClick={onShowOverlay}>
-          Show Overlay
-        </Btn>
+      {onShowOverlay ? (
+        <div data-guide="guide-show-overlay">
+          <Btn variant="primary" size="lg" onClick={onShowOverlay}>
+            Show Overlay
+          </Btn>
+        </div>
+      ) : (
+        <div
+          data-guide="guide-show-overlay"
+          className="grid gap-2 border border-dashed border-white/40 bg-black/30 p-3 text-center text-[0.78rem] text-mute"
+        >
+          오버레이는 앱에서 Show Overlay / 단축키로 표시해요
+        </div>
       )}
     </ShellCard>
   );

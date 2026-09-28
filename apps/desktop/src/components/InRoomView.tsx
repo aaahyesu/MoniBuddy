@@ -1,3 +1,4 @@
+import { APP_NAME } from "@monibuddy/shared";
 import type {
   Character,
   FriendInfo,
@@ -6,7 +7,7 @@ import type {
 } from "@monibuddy/shared";
 import { CharacterView } from "./CharacterView";
 import { FriendsPanel } from "./FriendsPanel";
-import { Btn, ShellCard } from "./ui";
+import { Brand, Btn, ShellCard } from "./ui";
 
 type Props = {
   roomCode: string;
@@ -28,6 +29,7 @@ type Props = {
   onInviteFriend: (userId: string) => void;
   onAcceptInvite: () => void;
   onDismissInvite: () => void;
+  guideToggle?: { active: boolean; onClick: () => void };
 };
 
 export function InRoomView({
@@ -50,10 +52,15 @@ export function InRoomView({
   onInviteFriend,
   onAcceptInvite,
   onDismissInvite,
+  guideToggle,
 }: Props) {
   return (
     <ShellCard wide>
-      <p className="m-0 text-[0.9rem] text-mute">방에 들어왔어요</p>
+      <Brand
+        title={APP_NAME}
+        subtitle="방에 들어왔어요"
+        guideToggle={guideToggle}
+      />
       <div className="border border-white bg-black/50 px-3 py-2.5 text-center font-mono text-[1.35rem] font-bold tracking-[0.22em] text-accent-cyan">
         {roomCode}
       </div>
