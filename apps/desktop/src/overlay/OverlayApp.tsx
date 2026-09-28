@@ -9,6 +9,7 @@ import {
   type Member,
   defaultCharState,
 } from "@monibuddy/shared";
+import { GuideSpotlight } from "../components/GuideSpotlight";
 import { resolveDefaultServerUrl } from "../lib/serverUrl";
 import { CharacterView } from "../components/CharacterView";
 import {
@@ -21,6 +22,7 @@ import {
 } from "../lib/borderPath";
 import { loadBuddyManifest, type BuddyDef } from "../lib/defaultBuddies";
 import { readProfile, writeStatusMessage } from "../hooks/useLocalProfile";
+import { useProductGuide } from "../hooks/useProductGuide";
 import { invokeSafe, isTauri } from "../lib/tauri";
 
 type Bubble = { memberId: string; text: string; until: number; id: string };
@@ -262,6 +264,35 @@ export function OverlayApp() {
   /** Win+Shift+S 영역 선택 중 — 캡처 화면처럼 이동 정지 */
   const captureFreezeRef = useRef(false);
   const captureFreezeStickyUntilRef = useRef(0);
+  /** 오버레이 가이드 진행 중 — 클릭 통과 비활성 */
+  const guideActiveRef = useRef(false);
+
+  const guide = useProductGuide({ windowKind: "overlay" });
+  guideActiveRef.current = guide.activeForWindow;
+
+  useEffect(() => {
+    if (!guide.activeForWindow || !guide.session) return;
+    const step = guide.session.step;
+    // 0: self only — 패널 닫기
+    // 1: composer — 패널 열기
+    // 2+: plus menu
+    if (step <= 0) {
+      setPanelOpen(false);
+      setPlusOpen(false);
+      setJoinOpen(false);
+      setMoveOpen(false);
+      return;
+    }
+    setPanelOpen(true);
+    setMoveOpen(false);
+    if (step >= 2) {
+      setPlusOpen(true);
+      setJoinOpen(false);
+    } else {
+      setPlusOpen(false);
+      setJoinOpen(false);
+    }
+  }, [guide.activeForWindow, guide.session?.step]);
 
   const setCaptureFreeze = (frozen: boolean) => {
     if (frozen) {
@@ -633,6 +664,7 @@ export function OverlayApp() {
             cy >= h - 90 &&
             Math.abs(cx - w / 2) <= 220;
           const capture =
+            guideActiveRef.current ||
             overActor ||
             overChat ||
             overRepositionBar ||
@@ -1038,6 +1070,7 @@ export function OverlayApp() {
         return (
         <div
           key={member.id}
+          data-guide={isSelf ? "guide-overlay-self" : undefined}
           className={`actor edge-${edge}${isSelf ? " self" : " peer"}${isDraggingThis ? " dragging" : ""}${repositionMode ? " reposition" : ""}${pinned ? " pinned" : ""}`}
           style={{ left: x, top: y, cursor: canDrag ? "grab" : undefined }}
           onPointerDown={(e) => {
@@ -1152,11 +1185,15 @@ export function OverlayApp() {
 
       {panelOpen && !repositionMode && (
         <div
+          data-guide="guide-overlay-composer"
           className="cursor-composer"
           onPointerDown={(e) => e.stopPropagation()}
         >
           {plusOpen && (
-            <div className="composer-plus-menu">
+            <div
+              data-guide="guide-overlay-room-actions"
+              className="composer-plus-menu"
+            >
               <button
                 type="button"
                 onClick={() => {
@@ -1360,6 +1397,7 @@ export function OverlayApp() {
           >
             <button
               type="button"
+              data-guide="guide-overlay-plus"
               className={`composer-plus${plusOpen ? " open" : ""}`}
               aria-label="더보기"
               onClick={() => {
@@ -1430,6 +1468,19 @@ export function OverlayApp() {
           </form>
         </div>
       )}
+
+      {guide.activeForWindow && guide.stepDef ? (
+        <GuideSpotlight
+          stepDef={guide.stepDef}
+          stepIndex={guide.stepIndex}
+          stepTotal={guide.stepTotal}
+          onNext={guide.next}
+          onPrev={guide.prev}
+          onSkip={guide.skipAndComplete}
+          onDismiss={guide.dismiss}
+          variant="overlay"
+        />
+      ) : null}
     </div>
   );
 }

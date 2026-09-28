@@ -27,13 +27,32 @@ export function ShellCard({ children, className, wide }: Props) {
 export function Brand({
   title,
   subtitle,
+  guideToggle,
 }: {
   title: string;
   subtitle?: string;
+  guideToggle?: { active: boolean; onClick: () => void };
 }) {
   return (
-    <div className="grid gap-2 text-center">
-      <div className="relative inline-block justify-self-center text-[clamp(1.4rem,4vw,1.85rem)] font-bold uppercase tracking-[0.06em] text-white [text-shadow:0_3px_0_rgba(255,255,255,0.35),0_6px_0_rgba(255,255,255,0.18),0_9px_0_rgba(255,255,255,0.08)]">
+    <div className="relative grid gap-2 text-center">
+      {guideToggle ? (
+        <button
+          type="button"
+          aria-label="기능 가이드"
+          aria-pressed={guideToggle.active}
+          title="기능 가이드"
+          onClick={guideToggle.onClick}
+          className={cn(
+            "absolute right-0 top-0 z-10 inline-flex size-8 items-center justify-center border text-[1rem] font-bold leading-none transition",
+            guideToggle.active
+              ? "border-white bg-white text-black"
+              : "border-white bg-black/60 text-white hover:bg-white hover:text-black",
+          )}
+        >
+          ?
+        </button>
+      ) : null}
+      <div className="justify-self-center px-10 text-[clamp(1.4rem,4vw,1.85rem)] font-bold uppercase tracking-[0.06em] text-white [text-shadow:0_3px_0_rgba(255,255,255,0.35),0_6px_0_rgba(255,255,255,0.18),0_9px_0_rgba(255,255,255,0.08)]">
         {title}
       </div>
       {subtitle ? (

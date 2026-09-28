@@ -27,6 +27,7 @@ type Props = {
   onClose: () => void;
   title?: string;
   initialTab?: "character" | "quests";
+  guideToggle?: { active: boolean; onClick: () => void };
 };
 
 export function BuddySheet({
@@ -41,12 +42,13 @@ export function BuddySheet({
   onClose,
   title = "내 캐릭터",
   initialTab = "character",
+  guideToggle,
 }: Props) {
   const [tab, setTab] = useState<"character" | "quests">(initialTab);
 
   return (
     <ShellCard>
-      <Brand title={title} />
+      <Brand title={title} guideToggle={guideToggle} />
       <div className="grid grid-cols-2 gap-2">
         <TabBtn active={tab === "character"} onClick={() => setTab("character")}>
           캐릭터 바꾸기

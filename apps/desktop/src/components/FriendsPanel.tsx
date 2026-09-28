@@ -37,7 +37,10 @@ export function FriendsPanel({
 }: Props) {
   const canAdd = connected && friendsReady;
   return (
-    <div className="grid gap-3 border border-white/50 bg-black/40 p-4">
+    <div
+      data-guide="guide-friends"
+      className="grid gap-3 border border-white/50 bg-black/40 p-4"
+    >
       <SectionLabel tone="orange">Friends</SectionLabel>
 
       <div className="flex flex-nowrap items-center gap-2">

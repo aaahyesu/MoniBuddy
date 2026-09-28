@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { APP_NAME } from "@monibuddy/shared";
 import { BuddySheet } from "./components/BuddySheet";
+import { GuideSpotlight } from "./components/GuideSpotlight";
 import { HotkeyField } from "./components/HotkeyField";
 import { InRoomView } from "./components/InRoomView";
 import { OnboardingFlow } from "./components/OnboardingFlow";
@@ -9,6 +10,7 @@ import { SimpleBuddyPicker } from "./components/SimpleBuddyPicker";
 import { Brand, Btn, Field, ShellCard, inputClass } from "./components/ui";
 import { UpdateBanner } from "./components/UpdateBanner";
 import { useLocalProfile } from "./hooks/useLocalProfile";
+import { useProductGuide } from "./hooks/useProductGuide";
 import { useProgress } from "./hooks/useProgress";
 import { useRoomSocket } from "./hooks/useRoomSocket";
 import { loadBuddyManifest } from "./lib/defaultBuddies";
@@ -16,6 +18,7 @@ import {
   readDeviceIdentity,
   writeDeviceIdentity,
 } from "./lib/deviceIdentity";
+import { isGuideComplete } from "./lib/productGuide";
 import { applyOverlayHotkey } from "./lib/overlayHotkey";
 import { persistActiveRoom } from "./overlay/OverlayApp";
 import { invokeSafe, isTauri } from "./lib/tauri";
@@ -52,6 +55,32 @@ export function App() {
   const [buddyTab, setBuddyTab] = useState<"character" | "quests">("character");
   const [hotkeyError, setHotkeyError] = useState("");
   const [device, setDevice] = useState(() => readDeviceIdentity());
+
+  const onEnterOverlayPhase = useCallback(() => {
+    void invokeSafe("toggle_overlay", { visible: true });
+  }, []);
+
+  const guide = useProductGuide({
+    windowKind: "settings",
+    onEnterOverlayPhase,
+  });
+
+  const guideToggle = useMemo(
+    () => ({
+      active: Boolean(guide.session?.active),
+      onClick: () => {
+        if (guide.session?.active) {
+          guide.dismiss();
+          return;
+        }
+        setScreen("lobby");
+        window.requestAnimationFrame(() => {
+          guide.start("settings", 0);
+        });
+      },
+    }),
+    [guide],
+  );
 
   useEffect(() => {
     if (!ready || !isTauri()) return;
@@ -255,6 +284,27 @@ export function App() {
       window.clearInterval(id);
     };
   }, [room.roomCode, room.sendChat, activeBuddyId, progress]);
+  // 가이드(settings) 진행 중이면 로비에 앵커가 있도록 전환
+  useEffect(() => {
+    if (!guide.activeForWindow) return;
+    if (screen === "lobby" || screen === "onboarding" || screen === null) return;
+    setScreen("lobby");
+  }, [guide.activeForWindow, screen]);
+
+  const guideLayer =
+    guide.activeForWindow && guide.stepDef ? (
+      <GuideSpotlight
+        stepDef={guide.stepDef}
+        stepIndex={guide.stepIndex}
+        stepTotal={guide.stepTotal}
+        onNext={guide.next}
+        onPrev={guide.prev}
+        onSkip={guide.skipAndComplete}
+        onDismiss={guide.dismiss}
+        canPrev={!(guide.session?.phase === "settings" && guide.stepIndex === 0)}
+        variant="settings"
+      />
+    ) : null;
 
   if (!ready || screen === null) {
     return (
@@ -278,6 +328,9 @@ export function App() {
           completeOnboarding();
           setScreen("lobby");
           void invokeSafe("toggle_overlay", { visible: true });
+          window.requestAnimationFrame(() => {
+            if (!isGuideComplete()) guide.start("settings", 0);
+          });
         }}
       />
     );
@@ -285,137 +338,152 @@ export function App() {
 
   if (screen === "profile") {
     return (
-      <ShellCard>
-        <Brand title={APP_NAME} subtitle="프로필 · 단축키" />
-        <UpdateBanner />
-        <Field label="닉네임">
-          <input
-            className={inputClass}
-            value={profile.nickname}
-            maxLength={16}
-            onChange={(e) => setNickname(e.target.value)}
+      <>
+        <ShellCard>
+          <Brand
+            title={APP_NAME}
+            subtitle="프로필 · 단축키"
+            guideToggle={guideToggle}
           />
-        </Field>
-        <Field label="서버 URL">
-          <input
-            className={inputClass}
-            value={profile.serverUrl}
-            onChange={(e) => setServerUrl(e.target.value.trim())}
-            placeholder="https://monibuddy-server.onrender.com"
-          />
-        </Field>
-        <label className="flex cursor-pointer items-center gap-2 text-left text-[0.82rem] text-white/90">
-          <input
-            type="checkbox"
-            className="size-4 shrink-0 accent-white"
-            checked={profile.forcePolling}
-            onChange={(e) => setForcePolling(e.target.checked)}
-          />
-          <span>회사망 호환 (HTTPS 폴링만)</span>
-        </label>
-        <p className="m-0 pl-6 text-[0.72rem] leading-relaxed text-mute">
-          WebSocket이 막힌 망에서 켜 두세요. Wi‑Fi에서 더 빠르게 쓰려면 끌 수 있어요.
-        </p>
-        {isTauri() ? (
-          <div className="grid gap-2 text-left">
-            <span className="text-[0.72rem] uppercase tracking-wider text-mute">
-              오버레이 단축키
-            </span>
-            <HotkeyField
-              value={profile.overlayHotkey}
-              onChange={(hotkey) => {
-                setHotkeyError("");
-                setOverlayHotkey(hotkey);
-              }}
+          <UpdateBanner />
+          <Field label="닉네임">
+            <input
+              className={inputClass}
+              value={profile.nickname}
+              maxLength={16}
+              onChange={(e) => setNickname(e.target.value)}
             />
-            {hotkeyError ? (
-              <p className="m-0 text-[0.72rem] text-rose-300">
-                등록 실패: {hotkeyError}. 다른 조합을 시도해 보세요.
-              </p>
-            ) : null}
-          </div>
-        ) : null}
-        <p className="m-0 text-[0.72rem] leading-relaxed text-mute">
-          연결이 안 되면 위 주소가{" "}
-          <span className="text-accent-cyan">https://monibuddy-server.onrender.com</span>{" "}
-          인지 확인하세요. Render 무료 서버는 첫 접속에 30초 걸릴 수 있어요.
-        </p>
-        <p className="mb-0 text-[0.9rem] text-mute">캐릭터</p>
-        <SimpleBuddyPicker
-          character={profile.character}
-          serverUrl={profile.serverUrl}
-          onChange={setCharacter}
-          isUnlocked={progress.isUnlocked}
-          getXp={progress.getXp}
-        />
-        <Btn
-          variant="primary"
-          size="lg"
-          onClick={() => setScreen(room.roomCode ? "room" : "lobby")}
-        >
-          확인
-        </Btn>
-      </ShellCard>
+          </Field>
+          <Field label="서버 URL">
+            <input
+              className={inputClass}
+              value={profile.serverUrl}
+              onChange={(e) => setServerUrl(e.target.value.trim())}
+              placeholder="https://monibuddy-server.onrender.com"
+            />
+          </Field>
+          <label className="flex cursor-pointer items-center gap-2 text-left text-[0.82rem] text-white/90">
+            <input
+              type="checkbox"
+              className="size-4 shrink-0 accent-white"
+              checked={profile.forcePolling}
+              onChange={(e) => setForcePolling(e.target.checked)}
+            />
+            <span>회사망 호환 (HTTPS 폴링만)</span>
+          </label>
+          <p className="m-0 pl-6 text-[0.72rem] leading-relaxed text-mute">
+            WebSocket이 막힌 망에서 켜 두세요. Wi‑Fi에서 더 빠르게 쓰려면 끌 수 있어요.
+          </p>
+          {isTauri() ? (
+            <div className="grid gap-2 text-left">
+              <span className="text-[0.72rem] uppercase tracking-wider text-mute">
+                오버레이 단축키
+              </span>
+              <HotkeyField
+                value={profile.overlayHotkey}
+                onChange={(hotkey) => {
+                  setHotkeyError("");
+                  setOverlayHotkey(hotkey);
+                }}
+              />
+              {hotkeyError ? (
+                <p className="m-0 text-[0.72rem] text-rose-300">
+                  등록 실패: {hotkeyError}. 다른 조합을 시도해 보세요.
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+          <p className="m-0 text-[0.72rem] leading-relaxed text-mute">
+            연결이 안 되면 위 주소가{" "}
+            <span className="text-accent-cyan">https://monibuddy-server.onrender.com</span>{" "}
+            인지 확인하세요. Render 무료 서버는 첫 접속에 30초 걸릴 수 있어요.
+          </p>
+          <p className="mb-0 text-[0.9rem] text-mute">캐릭터</p>
+          <SimpleBuddyPicker
+            character={profile.character}
+            serverUrl={profile.serverUrl}
+            onChange={setCharacter}
+            isUnlocked={progress.isUnlocked}
+            getXp={progress.getXp}
+          />
+          <Btn
+            variant="primary"
+            size="lg"
+            onClick={() => setScreen(room.roomCode ? "room" : "lobby")}
+          >
+            확인
+          </Btn>
+        </ShellCard>
+        {guideLayer}
+      </>
     );
   }
 
   if (screen === "buddy") {
     return (
-      <BuddySheet
-        key={buddyTab}
-        initialTab={buddyTab}
-        character={profile.character}
-        serverUrl={profile.serverUrl}
-        onChange={setCharacter}
-        isUnlocked={progress.isUnlocked}
-        getXp={progress.getXp}
-        quests={progress.questView}
-        unlockNotices={progress.state.lastUnlocks}
-        onDismissNotices={progress.clearLastUnlocks}
-        onClose={() => setScreen(room.roomCode ? "room" : "lobby")}
-      />
+      <>
+        <BuddySheet
+          key={buddyTab}
+          initialTab={buddyTab}
+          character={profile.character}
+          serverUrl={profile.serverUrl}
+          onChange={setCharacter}
+          isUnlocked={progress.isUnlocked}
+          getXp={progress.getXp}
+          quests={progress.questView}
+          unlockNotices={progress.state.lastUnlocks}
+          onDismissNotices={progress.clearLastUnlocks}
+          onClose={() => setScreen(room.roomCode ? "room" : "lobby")}
+          guideToggle={guideToggle}
+        />
+        {guideLayer}
+      </>
     );
   }
 
   if (screen === "room" && room.roomCode) {
     return (
-      <InRoomView
-        roomCode={room.roomCode}
-        nickname={profile.nickname}
-        character={profile.character}
-        serverUrl={profile.serverUrl}
-        members={room.members}
-        myFriendCode={room.resolvedFriendCode || device.friendCode}
-        friends={room.friends}
-        connected={room.connected}
-        friendsReady={room.friendsReady}
-        friendError={room.friendError}
-        pendingInvite={room.pendingInvite}
-        onLeave={() => room.leaveRoom()}
-        onOpenBuddyMenu={() => setScreen("buddy")}
-        onCopyFriendCode={() => {
-          const code = room.resolvedFriendCode || device.friendCode;
-          void navigator.clipboard?.writeText(code);
-        }}
-        onAddFriend={(code) => {
-          void room.addFriend(code);
-        }}
-        onRemoveFriend={(userId) => {
-          void room.removeFriend(userId);
-        }}
-        onInviteFriend={(userId) => {
-          void room.inviteFriend(userId);
-        }}
-        onAcceptInvite={() => {
-          const invite = room.pendingInvite;
-          if (!invite) return;
-          room.setPendingInvite(null);
-          void room.joinRoom(invite.roomCode).then((ok) => {
-            if (ok) setScreen("room");
-          });
-        }}
-        onDismissInvite={() => room.setPendingInvite(null)}
-      />
+      <>
+        <InRoomView
+          roomCode={room.roomCode}
+          nickname={profile.nickname}
+          character={profile.character}
+          serverUrl={profile.serverUrl}
+          members={room.members}
+          myFriendCode={room.resolvedFriendCode || device.friendCode}
+          friends={room.friends}
+          connected={room.connected}
+          friendsReady={room.friendsReady}
+          friendError={room.friendError}
+          pendingInvite={room.pendingInvite}
+          onLeave={() => room.leaveRoom()}
+          onOpenBuddyMenu={() => setScreen("buddy")}
+          onCopyFriendCode={() => {
+            const code = room.resolvedFriendCode || device.friendCode;
+            void navigator.clipboard?.writeText(code);
+          }}
+          onAddFriend={(code) => {
+            void room.addFriend(code);
+          }}
+          onRemoveFriend={(userId) => {
+            void room.removeFriend(userId);
+          }}
+          onInviteFriend={(userId) => {
+            void room.inviteFriend(userId);
+          }}
+          onAcceptInvite={() => {
+            const invite = room.pendingInvite;
+            if (!invite) return;
+            room.setPendingInvite(null);
+            void room.joinRoom(invite.roomCode).then((ok) => {
+              if (ok) setScreen("room");
+            });
+          }}
+          onDismissInvite={() => room.setPendingInvite(null)}
+          guideToggle={guideToggle}
+        />
+        {guideLayer}
+      </>
     );
   }
 
@@ -465,6 +533,7 @@ export function App() {
           });
         }}
         onDismissInvite={() => room.setPendingInvite(null)}
+        guideToggle={guideToggle}
       />
       <div className="fixed bottom-3 right-3 flex gap-2 opacity-75">
         {!isTauri() && (
@@ -488,6 +557,7 @@ export function App() {
           처음부터
         </Btn>
       </div>
+      {guideLayer}
     </>
   );
 }
