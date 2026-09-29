@@ -5,6 +5,33 @@
 
 ---
 
+## v0.1.29 — 오버레이 캐릭터 클릭 먹통
+
+**이슈:** [#59](https://github.com/aaahyesu/MoniBuddy/issues/59)  
+**배포일:** 2026-09-29  
+**대상:** 데스크톱 (Rust click-through + 가이드 세션)
+
+### 증상
+- 0.1.28에서 재실행 후 가이드 UI는 안 보이는데 내 캐릭터 클릭이 안 됨
+
+### 원인
+- `guideSession`이 `phase: settings`로 localStorage에 남으면 오버레이는 가이드를 안 그려도 클릭 통과를 강제함
+- 작업관리자 종료 시 세션이 정리되지 않음
+
+### 수정
+- settings phase 세션: **설정 창이 실제로 보일 때만** 클릭 통과
+- 설정 창이 없으면 orphan 세션 자동 삭제 + TTL(2h)
+- `set_click_through(force)`로 주기 재적용 시 캐시 무시
+
+### 확인 방법
+1. 가이드 중단·강제 종료 후 재실행 → 캐릭터 클릭으로 채팅 열림
+2. 정상 가이드(설정→오버레이) 중에는 설정 창 입력이 막히지 않음
+
+### 배포 체크
+- [ ] Release desktop `v0.1.29` 성공
+
+---
+
 ## v0.1.28 — 지정 편지 힌트 + 폭탄·사다리
 
 **이슈:** [#56](https://github.com/aaahyesu/MoniBuddy/issues/56)  
