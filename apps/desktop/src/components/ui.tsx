@@ -9,19 +9,16 @@ type Props = {
 
 /** ADRIFT-inspired pixel panel: sharp white border + translucent black */
 export function ShellCard({ children, className, wide }: Props) {
-  // place-items-center + 긴 카드는 위쪽이 잘리고 스크롤로도 못 올림 → 위에서부터 배치
   return (
-    <div className="pixel-scroll fixed inset-0 overflow-y-auto overscroll-contain">
-      <div className="grid min-h-full content-start justify-items-center p-5 pb-10">
-        <div
-          className={cn(
-            "grid w-full gap-4 border border-white bg-black/80 p-6 shadow-[0_0_0_1px_rgba(255,255,255,0.15)] backdrop-blur-[2px]",
-            wide ? "max-w-[520px]" : "max-w-[420px]",
-            className,
-          )}
-        >
-          {children}
-        </div>
+    <div className="grid min-h-screen place-items-center p-5">
+      <div
+        className={cn(
+          "grid w-full gap-4 border border-white bg-black/80 p-6 shadow-[0_0_0_1px_rgba(255,255,255,0.15)] backdrop-blur-[2px]",
+          wide ? "max-w-[520px]" : "max-w-[420px]",
+          className,
+        )}
+      >
+        {children}
       </div>
     </div>
   );

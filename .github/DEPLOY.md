@@ -5,6 +5,27 @@
 
 ---
 
+## v0.1.33 — 프로필 빈 화면(UpdateBanner import)
+
+**이슈:** [#59](https://github.com/aaahyesu/MoniBuddy/issues/59) 후속  
+**배포일:** 2026-09-29  
+**대상:** 데스크톱
+
+### 증상
+- 로비 프로필(캐릭터) 클릭 시 검정 별 배경만 보임
+
+### 원인
+- 0.1.30에서 `UpdateBanner` import를 `ClickDebugPanel`로 교체하면서 JSX `<UpdateBanner />`만 남아 ReferenceError 크래시
+
+### 수정
+- `UpdateBanner` import 복구
+- 잘못된 ShellCard 스크롤/상단정렬 실험 되돌림
+
+### 배포 체크
+- [ ] Release desktop `v0.1.33` 성공
+
+---
+
 ## v0.1.32 — 프로필 빈 화면(중앙 정렬 클립)
 
 **이슈:** [#59](https://github.com/aaahyesu/MoniBuddy/issues/59) 후속  
@@ -23,7 +44,7 @@
 - 프로필 진입 시 가이드 종료
 
 ### 배포 체크
-- [ ] Release desktop `v0.1.32` 성공
+- [x] main 머지 (원인 오진 — 0.1.33에서 정정)
 
 ---
 

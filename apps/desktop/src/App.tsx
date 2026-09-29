@@ -9,6 +9,7 @@ import { RoomLobby } from "./components/RoomLobby";
 import { SimpleBuddyPicker } from "./components/SimpleBuddyPicker";
 import { Brand, Btn, Field, ShellCard, inputClass } from "./components/ui";
 import { ClickDebugPanel } from "./components/ClickDebugPanel";
+import { UpdateBanner } from "./components/UpdateBanner";
 import { useLocalProfile } from "./hooks/useLocalProfile";
 import { useProductGuide } from "./hooks/useProductGuide";
 import { useProgress } from "./hooks/useProgress";
@@ -449,12 +450,13 @@ export function App() {
       window.clearInterval(id);
     };
   }, [room.roomCode, room.sendChat, activeBuddyId, progress]);
-  // 가이드 중 프로필/방 등으로 나가면 스포트라이트 앵커가 사라져 빈 화면처럼 보임 → 가이드 종료
+  // 가이드(settings) 진행 중이면 로비에 앵커가 있도록 전환
+  // (프로필 등 긴 화면으로 가면 스포트라이트만 남아 빈 화면처럼 보임)
   useEffect(() => {
     if (!guide.activeForWindow) return;
     if (screen === "lobby" || screen === "onboarding" || screen === null) return;
-    guide.dismiss();
-  }, [guide.activeForWindow, guide.dismiss, screen]);
+    setScreen("lobby");
+  }, [guide.activeForWindow, screen]);
 
   const guideLayer =
     guide.activeForWindow && guide.stepDef ? (
@@ -676,10 +678,7 @@ export function App() {
         friendGroups={room.friendGroups}
         friendError={room.friendError}
         pendingInvite={room.pendingInvite}
-        onEditProfile={() => {
-          if (guide.session?.active) guide.dismiss();
-          setScreen("profile");
-        }}
+        onEditProfile={() => setScreen("profile")}
         onOpenRoomInfo={() => setScreen("room")}
         onShowOverlay={
           isTauri()
