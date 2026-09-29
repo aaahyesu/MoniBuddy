@@ -213,9 +213,14 @@ export function useRoomSocket(opts: Options) {
         if (!code || rejoiningRef.current || cancelled) return;
         rejoiningRef.current = true;
         try {
-          const ok = await joinRoomOnSocket(socket!, code, { silent: true });
-          if (!ok && roomCodeRef.current === code) {
-            // 방이 이미 사라졌거나 입장 불가 — 로컬 방 상태만 정리
+          // 서버 빈방 유예·재시작과 겹칠 수 있어 몇 번 재시도
+          for (let attempt = 0; attempt < 4; attempt++) {
+            if (cancelled || roomCodeRef.current !== code) return;
+            const ok = await joinRoomOnSocket(socket!, code, { silent: true });
+            if (ok) return;
+            await new Promise((r) => setTimeout(r, 800 * (attempt + 1)));
+          }
+          if (roomCodeRef.current === code) {
             clearRoomLocal();
             setError("연결이 끊겨 방에서 나왔어요. 다시 입장해 주세요.");
           }
@@ -287,9 +292,15 @@ export function useRoomSocket(opts: Options) {
         setPendingInvite(payload);
       };
       const onRoomNotice = (payload: RoomNoticePayload) => {
-        if (payload?.type !== "member-join") return;
-        const nick = (payload.nickname || "").trim() || "친구";
-        writeOverlayNotice(`${nick}님이 입장했습니다!`);
+        if (payload?.type === "member-join") {
+          const nick = (payload.nickname || "").trim() || "친구";
+          writeOverlayNotice(`${nick}님이 입장했습니다!`);
+          return;
+        }
+        if (payload?.type === "member-leave") {
+          const nick = (payload.nickname || "").trim() || "친구";
+          writeOverlayNotice(`${nick}님이 나갔습니다`);
+        }
       };
 
       socket.on("connect", onConnect);

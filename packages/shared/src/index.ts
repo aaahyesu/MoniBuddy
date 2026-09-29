@@ -321,7 +321,7 @@ export type FriendInviteRecvPayload = {
 };
 
 export type RoomNoticePayload = {
-  type: "member-join";
+  type: "member-join" | "member-leave";
   nickname: string;
   memberId: string;
   at: number;

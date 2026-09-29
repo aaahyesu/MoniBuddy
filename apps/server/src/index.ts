@@ -72,15 +72,31 @@ type Room = {
 
 const rooms = new Map<string, Room>();
 const socketRoom = new Map<string, string>();
-/** 끊김 후 빈 방 유지 (클라이언트 재입장 여유). 의도적 퇴장이면 즉시 삭제 */
+/** 끊김 후 빈 방 유지 (클라이언트 재입장 여유) */
 const EMPTY_ROOM_GRACE_MS = 45_000;
+/** 소켓 끊김 시 멤버를 즉시 제거하지 않고 유지 — 방장 퇴장 레이스 방지 */
+const MEMBER_DISCONNECT_GRACE_MS = 45_000;
 const emptyRoomTimers = new Map<string, ReturnType<typeof setTimeout>>();
+/** key = `${roomCode}:${memberId}` */
+const pendingMemberRemovals = new Map<string, ReturnType<typeof setTimeout>>();
+
+function memberRemovalKey(code: string, memberId: string) {
+  return `${code}:${memberId}`;
+}
 
 function cancelEmptyRoomTimer(code: string) {
   const t = emptyRoomTimers.get(code);
   if (!t) return;
   clearTimeout(t);
   emptyRoomTimers.delete(code);
+}
+
+function cancelPendingMemberRemoval(code: string, memberId: string) {
+  const key = memberRemovalKey(code, memberId);
+  const t = pendingMemberRemovals.get(key);
+  if (!t) return;
+  clearTimeout(t);
+  pendingMemberRemovals.delete(key);
 }
 
 function scheduleEmptyRoomExpiry(code: string) {
@@ -93,6 +109,40 @@ function scheduleEmptyRoomExpiry(code: string) {
     }
   }, EMPTY_ROOM_GRACE_MS);
   emptyRoomTimers.set(code, timer);
+}
+
+function memberHasSocket(room: Room, memberId: string): boolean {
+  for (const mid of room.socketToMember.values()) {
+    if (mid === memberId) return true;
+  }
+  return false;
+}
+
+function scheduleMemberRemoval(code: string, memberId: string) {
+  cancelPendingMemberRemoval(code, memberId);
+  const key = memberRemovalKey(code, memberId);
+  const timer = setTimeout(() => {
+    pendingMemberRemovals.delete(key);
+    const room = rooms.get(code);
+    if (!room) return;
+    if (memberHasSocket(room, memberId)) return;
+    const member = room.members.get(memberId);
+    room.members.delete(memberId);
+    if (room.members.size === 0) {
+      scheduleEmptyRoomExpiry(code);
+      return;
+    }
+    if (member) {
+      io.to(code).emit(SocketEvents.RoomNotice, {
+        type: "member-leave",
+        nickname: member.nickname,
+        memberId,
+        at: Date.now(),
+      });
+    }
+    broadcastSync(room);
+  }, MEMBER_DISCONNECT_GRACE_MS);
+  pendingMemberRemovals.set(key, timer);
 }
 
 const app = express();
@@ -189,22 +239,36 @@ function leaveSocket(socketId: string, opts?: { intentional?: boolean }) {
   const room = rooms.get(code);
   if (!room) return;
   const memberId = room.socketToMember.get(socketId);
+  const leaving = memberId ? room.members.get(memberId) : undefined;
+
   if (memberId) {
-    room.members.delete(memberId);
     room.socketToMember.delete(socketId);
   }
   socketRoom.delete(socketId);
-  if (room.members.size === 0) {
-    if (opts?.intentional) {
-      cancelEmptyRoomTimer(code);
-      rooms.delete(code);
-    } else {
-      // 네트워크 끊김 — 잠시 빈 방으로 남겨 자동 재입장 허용
+  void io.sockets.sockets.get(socketId)?.leave(code);
+
+  if (!memberId || !leaving) return;
+
+  if (opts?.intentional) {
+    cancelPendingMemberRemoval(code, memberId);
+    room.members.delete(memberId);
+    if (room.members.size === 0) {
+      // 혼자 나간 경우도 즉시 삭제하지 않음 — 동시 재입장 레이스 완화
       scheduleEmptyRoomExpiry(code);
+      return;
     }
-  } else {
+    io.to(code).emit(SocketEvents.RoomNotice, {
+      type: "member-leave",
+      nickname: leaving.nickname,
+      memberId,
+      at: Date.now(),
+    });
     broadcastSync(room);
+    return;
   }
+
+  // 네트워크 끊김: 멤버 슬롯을 잠시 유지해 방이 빈 것으로 오인되지 않게 함
+  scheduleMemberRemoval(code, memberId);
 }
 
 io.on("connection", (socket) => {
@@ -256,33 +320,59 @@ io.on("connection", (socket) => {
         ack?.({ ok: false, error: "room not found" });
         return;
       }
-      if (room.members.size >= MAX_ROOM_MEMBERS) {
-        ack?.({ ok: false, error: "room is full" });
-        return;
-      }
       leaveSocket(socket.id);
-      const memberId = nanoid(10);
-      const slot = room.members.size;
-      const member: Member = {
-        id: memberId,
-        nickname: payload.nickname.trim().slice(0, 16),
-        character: payload.character,
-        state: defaultCharState(0.1 + slot * 0.08),
-        offset: 8 + slot * 10,
-        statusMessage: sanitizeStatusMessage(payload.statusMessage),
-      };
-      room.members.set(memberId, member);
+      const nickname = payload.nickname.trim().slice(0, 16);
+      // 끊김 유예 중인 같은 닉 멤버가 있으면 슬롯 재사용 (중복 캐릭터 방지)
+      const reclaimable = [...room.members.values()].find(
+        (m) =>
+          m.nickname.trim().toLowerCase() === nickname.toLowerCase() &&
+          !memberHasSocket(room, m.id),
+      );
+
+      let memberId: string;
+      let member: Member;
+      let isNew = false;
+      if (reclaimable) {
+        memberId = reclaimable.id;
+        cancelPendingMemberRemoval(code, memberId);
+        member = {
+          ...reclaimable,
+          nickname,
+          character: payload.character,
+          statusMessage: sanitizeStatusMessage(payload.statusMessage),
+        };
+        room.members.set(memberId, member);
+      } else {
+        if (room.members.size >= MAX_ROOM_MEMBERS) {
+          ack?.({ ok: false, error: "room is full" });
+          return;
+        }
+        isNew = true;
+        memberId = nanoid(10);
+        const slot = room.members.size;
+        member = {
+          id: memberId,
+          nickname,
+          character: payload.character,
+          state: defaultCharState(0.1 + slot * 0.08),
+          offset: 8 + slot * 10,
+          statusMessage: sanitizeStatusMessage(payload.statusMessage),
+        };
+        room.members.set(memberId, member);
+      }
       room.socketToMember.set(socket.id, memberId);
       cancelEmptyRoomTimer(code);
       socketRoom.set(socket.id, code);
       void socket.join(code);
       ack?.({ ok: true, memberId, room: snapshot(room) });
-      socket.to(code).emit(SocketEvents.RoomNotice, {
-        type: "member-join",
-        nickname: member.nickname,
-        memberId,
-        at: Date.now(),
-      });
+      if (isNew) {
+        socket.to(code).emit(SocketEvents.RoomNotice, {
+          type: "member-join",
+          nickname: member.nickname,
+          memberId,
+          at: Date.now(),
+        });
+      }
       broadcastSync(room);
     } catch (err) {
       ack?.({ ok: false, error: err instanceof Error ? err.message : "join failed" });
