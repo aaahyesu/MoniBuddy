@@ -67,6 +67,7 @@ export function useRoomSocket(opts: Options) {
     null,
   );
   const [ladder, setLadder] = useState<LadderState | null>(null);
+  const bombRef = useRef<BombState | null>(null);
   const seenIds = useRef(new Set<string>());
   const optsRef = useRef(opts);
   /** 입장 중인 방 코드. 의도적 퇴장 시에만 비움 — 끊겨도 유지해 재입장에 사용 */
@@ -325,12 +326,33 @@ export function useRoomSocket(opts: Options) {
         }
       };
       const onBombSync = (state: BombState) => {
+        const prev = bombRef.current;
+        bombRef.current = state;
         setBomb(state);
         setBombExplode(null);
+        if (!prev || prev.endsAt !== state.endsAt) {
+          writeOverlayNotice(
+            "폭탄 게임 시작! 폭탄을 클릭해 상대에게 넘겨보세요",
+          );
+        } else if (prev.holderMemberId !== state.holderMemberId) {
+          writeOverlayNotice(
+            `${state.holderNickname}님에게 폭탄이 넘어갔어요`,
+          );
+        }
       };
       const onBombExplode = (payload: BombExplodePayload) => {
+        bombRef.current = null;
         setBomb(null);
-        setBombExplode(payload);
+        setBombExplode((prev) => {
+          // 이미 같은 endsAt 폭발이거나 연출 중이면 덮지 않음 (짧은 재재생 방지)
+          if (
+            prev &&
+            (prev.at === payload.at || Date.now() - prev.at < 2000)
+          ) {
+            return prev;
+          }
+          return payload;
+        });
       };
       const onLadderSync = (state: LadderState) => {
         setLadder(state);
@@ -458,6 +480,7 @@ export function useRoomSocket(opts: Options) {
     setMemberId(null);
     setMembers([]);
     setMessages([]);
+    bombRef.current = null;
     setBomb(null);
     setBombExplode(null);
     setLadder(null);
@@ -506,7 +529,8 @@ export function useRoomSocket(opts: Options) {
 
   useEffect(() => {
     if (!bombExplode) return;
-    const t = window.setTimeout(() => setBombExplode(null), 2800);
+    // 스프라이트 ~1s + 여유 — 클리어 후에도 overlay playedAt으로 재적용 차단
+    const t = window.setTimeout(() => setBombExplode(null), 2200);
     return () => window.clearTimeout(t);
   }, [bombExplode]);
 

@@ -381,6 +381,9 @@ export function App() {
       nickname: profile.nickname,
       character: profile.character,
       statusMessage: profile.statusMessage || "",
+      bomb: room.bomb,
+      ladder: room.ladder,
+      bombExplode: room.bombExplode,
     };
     localStorage.setItem("monibuddy.runtime.v1", JSON.stringify(payload));
     if (room.roomCode) {
@@ -396,6 +399,9 @@ export function App() {
     room.messages,
     room.memberId,
     room.roomCode,
+    room.bomb,
+    room.ladder,
+    room.bombExplode,
     profile.serverUrl,
     profile.nickname,
     profile.character,

@@ -227,18 +227,22 @@ export function isLadderChatDraft(raw: string): boolean {
 }
 
 export type MiniGameParse =
-  | { kind: "bomb-start"; seconds: number }
+  | { kind: "bomb-start"; seconds: number; random: boolean }
   | { kind: "bomb-pass"; targetNickname?: string; random: boolean }
   | { kind: "ladder-open" }
   | { kind: "none" };
 
-/** `/폭탄 30` · `/폭탄 넘겨 [닉]` · `/사다리` */
+/** `/폭탄 30` · `/폭탄 랜덤` · `/폭탄 넘겨 [닉]` · `/사다리` */
 export function parseMiniGameChat(raw: string): MiniGameParse {
   const trimmed = String(raw ?? "").trim().normalize("NFC");
+  const bombRandom = trimmed.match(/^\/(?:폭탄|bomb)\s+(?:랜덤|random)\s*$/i);
+  if (bombRandom) {
+    return { kind: "bomb-start", seconds: 0, random: true };
+  }
   const bombStart = trimmed.match(/^\/(?:폭탄|bomb)\s+(\d+)\s*$/i);
   if (bombStart) {
     const seconds = Math.max(5, Math.min(120, Number(bombStart[1]) || 30));
-    return { kind: "bomb-start", seconds };
+    return { kind: "bomb-start", seconds, random: false };
   }
   const bombPass = trimmed.match(
     /^\/(?:폭탄|bomb)\s+(?:넘겨|pass)(?:\s+(@?\S+))?\s*$/i,
@@ -273,7 +277,7 @@ export type BombExplodePayload = {
   at: number;
 };
 
-export type BombStartPayload = { seconds: number };
+export type BombStartPayload = { seconds?: number; random?: boolean };
 export type BombPassPayload = {
   random?: boolean;
   targetNickname?: string;
@@ -309,7 +313,7 @@ export function generateLadderRungs(
   columns: number,
   rows = 10,
 ): boolean[][] {
-  const n = Math.max(2, columns);
+  const n = Math.max(1, columns);
   const rungs: boolean[][] = [];
   for (let row = 0; row < rows; row++) {
     const line: boolean[] = [];
@@ -344,6 +348,33 @@ export function resolveLadderPaths(
     ends.push(col);
   }
   return ends;
+}
+
+/** 시작 열 → 각 가로줄 통과 후 열 (연출용) */
+export function traceLadderPath(
+  startCol: number,
+  columns: number,
+  rungs: boolean[][],
+): Array<{ col: number; row: number }> {
+  const points: Array<{ col: number; row: number }> = [
+    { col: startCol, row: 0 },
+  ];
+  let col = startCol;
+  for (let ri = 0; ri < rungs.length; ri++) {
+    const row = rungs[ri]!;
+    if (col > 0 && row[col - 1]) col -= 1;
+    else if (col < columns - 1 && row[col]) col += 1;
+    points.push({ col, row: ri + 1 });
+  }
+  return points;
+}
+
+export function shuffleInPlace<T>(arr: T[]): T[] {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j]!, arr[i]!];
+  }
+  return arr;
 }
 
 export type RoomSnapshot = {

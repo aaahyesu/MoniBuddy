@@ -14,6 +14,7 @@ import {
   generateLadderRungs,
   nicknamesEqual,
   resolveLadderPaths,
+  shuffleInPlace,
 } from "@monibuddy/shared";
 
 export type GameRoom = {
@@ -54,7 +55,7 @@ function scheduleBombExplode(
     const payload: BombExplodePayload = {
       holderMemberId: r.bomb.holderMemberId,
       holderNickname: r.bomb.holderNickname,
-      at: Date.now(),
+      at: r.bomb.endsAt,
     };
     clearBomb(r);
     io.to(code).emit(SocketEvents.BombExplode, payload);
@@ -91,7 +92,9 @@ export function attachMiniGames(
       ack?.({ ok: false, error: "이미 폭탄이 있어요" });
       return;
     }
-    const seconds = Math.max(5, Math.min(120, Number(payload?.seconds) || 30));
+    const seconds = payload?.random
+      ? 5 + Math.floor(Math.random() * 116) // 5~120
+      : Math.max(5, Math.min(120, Number(payload?.seconds) || 30));
     const bomb: BombState = {
       endsAt: Date.now() + seconds * 1000,
       durationSec: seconds,
@@ -218,8 +221,8 @@ export function attachMiniGames(
       const m = room.members.get(id);
       if (m) participants.push(m);
     }
-    if (participants.length < 2) {
-      ack?.({ ok: false, error: "참가자는 2명 이상이어야 해요" });
+    if (participants.length < 1) {
+      ack?.({ ok: false, error: "참가자를 골라 주세요" });
       return;
     }
     const n = participants.length;
@@ -228,13 +231,11 @@ export function attachMiniGames(
       : [];
     if (payload?.mode === "winlose" || outcomes.length !== n) {
       outcomes = participants.map((_, i) => (i === 0 ? "당첨" : "꽝"));
-      // shuffle outcomes
-      for (let i = outcomes.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [outcomes[i], outcomes[j]] = [outcomes[j], outcomes[i]];
-      }
     }
-    const rungs = generateLadderRungs(n, Math.max(8, n * 2));
+    // 결과 칸은 항상 섞음 — 누가 무엇을 받을지는 사다리+셔플로만 결정
+    shuffleInPlace(outcomes);
+    const rowCount = Math.min(6, Math.max(4, n + 1));
+    const rungs = generateLadderRungs(n, rowCount);
     const ends = resolveLadderPaths(n, rungs);
     const results = participants.map((p, startCol) => ({
       name: p.nickname,
@@ -251,13 +252,14 @@ export function attachMiniGames(
     };
     room.ladder = ladder;
     io.to(code).emit(SocketEvents.LadderSync, ladder);
-    // 연출 후 done
+    // 클라이언트 경로 연출 시간과 맞춤
+    const animMs = n * ((rowCount + 1) * 110 + 280) + 900;
     setTimeout(() => {
       const r = rooms.get(code);
       if (!r?.ladder || r.ladder.phase !== "running") return;
       r.ladder = { ...r.ladder, phase: "done" };
       io.to(code).emit(SocketEvents.LadderSync, r.ladder);
-    }, 5500 + n * 400);
+    }, animMs);
     ack?.({ ok: true, ladder });
   };
 
@@ -313,6 +315,11 @@ export function attachMiniGames(
       text: string,
     ): boolean {
       const t = text.trim();
+      const startRandom = t.match(/^\/(?:폭탄|bomb)\s+(?:랜덤|random)\s*$/i);
+      if (startRandom) {
+        startBomb(socket, { random: true });
+        return true;
+      }
       const start = t.match(/^\/(?:폭탄|bomb)\s+(\d+)\s*$/i);
       if (start) {
         startBomb(socket, { seconds: Number(start[1]) });
