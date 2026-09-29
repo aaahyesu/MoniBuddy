@@ -5,6 +5,8 @@ export const GUIDE_CONTENT_VERSION = 1;
 export const GUIDE_STATE_KEY = "monibuddy.guide.v1";
 export const GUIDE_SESSION_KEY = "monibuddy.guideSession.v1";
 export const GUIDE_EVENT = "monibuddy:guide";
+/** 오버레이 창 → 설정 창 소켓으로 guide:markSeen 전달 */
+export const GUIDE_MARK_SEEN_REQUEST_KEY = "monibuddy.guide.markSeenRequest.v1";
 
 export type GuidePhase = "settings" | "overlay";
 
@@ -16,7 +18,10 @@ export type GuideSession = {
 };
 
 export type GuideState = {
+  /** @deprecated seenUserIds 로 대체 — 하위호환 / 오프라인 캐시 */
   completedVersion?: number;
+  /** 오프라인 캐시 — 서버 guideSeen 이 권위 */
+  seenUserIds?: string[];
 };
 
 export type GuideStepDef = {
@@ -93,11 +98,15 @@ export function readGuideState(): GuideState {
     const raw = localStorage.getItem(GUIDE_STATE_KEY);
     if (!raw) return {};
     const parsed = JSON.parse(raw) as GuideState;
+    const seen = Array.isArray(parsed.seenUserIds)
+      ? parsed.seenUserIds.filter((id): id is string => typeof id === "string" && Boolean(id))
+      : [];
     return {
       completedVersion:
         typeof parsed.completedVersion === "number"
           ? parsed.completedVersion
           : undefined,
+      seenUserIds: seen,
     };
   } catch {
     return {};
@@ -109,13 +118,68 @@ export function writeGuideState(next: GuideState) {
   dispatchGuideEvent();
 }
 
+/** 오프라인 캐시 — 서버 값이 오기 전 폴백 */
+export function hasUserSeenGuide(userId: string | null | undefined): boolean {
+  if (!userId) return false;
+  const s = readGuideState();
+  if ((s.completedVersion ?? 0) >= GUIDE_CONTENT_VERSION) return true;
+  return (s.seenUserIds ?? []).includes(userId);
+}
+
+/** PresenceHello 등 서버 권위 값으로 로컬 캐시 동기화 */
+export function cacheGuideSeenFromServer(
+  userId: string | null | undefined,
+  seen: boolean,
+) {
+  if (!userId) return;
+  const s = readGuideState();
+  const ids = new Set(s.seenUserIds ?? []);
+  if (seen) {
+    ids.add(userId);
+    writeGuideState({
+      ...s,
+      completedVersion: Math.max(s.completedVersion ?? 0, GUIDE_CONTENT_VERSION),
+      seenUserIds: [...ids],
+    });
+  } else {
+    ids.delete(userId);
+    writeGuideState({
+      ...s,
+      completedVersion: 0,
+      seenUserIds: [...ids],
+    });
+  }
+}
+
+export function markUserSeenGuide(userId: string | null | undefined) {
+  if (!userId) return;
+  cacheGuideSeenFromServer(userId, true);
+}
+
+/** 오버레이 등 소켓 없는 창에서 설정 창에 markSeen 요청 */
+export function requestServerGuideMarkSeen() {
+  try {
+    localStorage.setItem(GUIDE_MARK_SEEN_REQUEST_KEY, String(Date.now()));
+  } catch {
+    /* ignore */
+  }
+}
+
+/** @deprecated hasUserSeenGuide 사용 */
 export function isGuideComplete(): boolean {
   const s = readGuideState();
   return (s.completedVersion ?? 0) >= GUIDE_CONTENT_VERSION;
 }
 
-export function markGuideComplete() {
-  writeGuideState({ completedVersion: GUIDE_CONTENT_VERSION });
+export function markGuideComplete(userId?: string | null) {
+  if (userId) {
+    markUserSeenGuide(userId);
+  } else {
+    writeGuideState({
+      ...readGuideState(),
+      completedVersion: GUIDE_CONTENT_VERSION,
+    });
+  }
   clearGuideSession();
 }
 

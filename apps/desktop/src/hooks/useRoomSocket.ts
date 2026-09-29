@@ -14,6 +14,7 @@ import {
   SocketEvents,
   defaultCharState,
 } from "@monibuddy/shared";
+import { cacheGuideSeenFromServer } from "../lib/productGuide";
 import {
   writeOverlayNotice,
   writePendingInvite,
@@ -54,6 +55,8 @@ export function useRoomSocket(opts: Options) {
   /** PresenceHello 성공 후에만 친구 추가 가능 */
   const [friendsReady, setFriendsReady] = useState(false);
   const [resolvedUserId, setResolvedUserId] = useState<string | null>(null);
+  /** null = 아직 PresenceHello 전, DB 기준 가이드 완료 여부 */
+  const [guideSeen, setGuideSeen] = useState<boolean | null>(null);
   const seenIds = useRef(new Set<string>());
   const optsRef = useRef(opts);
   /** 입장 중인 방 코드. 의도적 퇴장 시에만 비움 — 끊겨도 유지해 재입장에 사용 */
@@ -124,9 +127,19 @@ export function useRoomSocket(opts: Options) {
         setFriendGroups(ack.groups ?? []);
         setFriendsReady(true);
         setFriendError(null);
+        const seen = Boolean(ack.guideSeen);
+        setGuideSeen(seen);
+        cacheGuideSeenFromServer(ack.userId, seen);
       },
     );
   }, []);
+
+  const markGuideSeen = useCallback(() => {
+    const uid = resolvedUserId || optsRef.current.userId;
+    if (uid) cacheGuideSeenFromServer(uid, true);
+    setGuideSeen(true);
+    socketRef.current?.emit(SocketEvents.GuideMarkSeen);
+  }, [resolvedUserId]);
 
   const joinRoomOnSocket = useCallback(
     async (socket: Socket, code: string, optsJoin?: { silent?: boolean }) => {
@@ -701,6 +714,7 @@ export function useRoomSocket(opts: Options) {
     resolvedFriendCode,
     resolvedUserId,
     friendsReady,
+    guideSeen,
     createRoom,
     joinRoom,
     leaveRoom,
@@ -717,5 +731,6 @@ export function useRoomSocket(opts: Options) {
     assignFriendGroup,
     setPendingInvite,
     setFriendError,
+    markGuideSeen,
   };
 }

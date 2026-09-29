@@ -3,9 +3,11 @@ import {
   clearGuideSession,
   GUIDE_EVENT,
   GUIDE_SESSION_KEY,
+  GUIDE_STATE_KEY,
   getStepDef,
-  isGuideComplete,
+  hasUserSeenGuide,
   markGuideComplete,
+  markUserSeenGuide,
   readGuideSession,
   startGuideSession,
   stepsForPhase,
@@ -17,29 +19,58 @@ import {
 
 export type UseProductGuideOptions = {
   windowKind: "settings" | "overlay";
+  /** 자동 가이드 1회 기록용 — 없으면 dismiss 시 seen 미기록 */
+  userId?: string | null;
+  /**
+   * 서버(DB) 기준 가이드 완료 여부.
+   * null = PresenceHello 전 — 자동 시작 판정에 쓰지 않음.
+   */
+  serverGuideSeen?: boolean | null;
+  /** dismiss / skip / complete / auto-start 시 서버 markSeen */
+  onMarkSeen?: () => void;
   /** settings phase 마지막 다음 → overlay 전환 직전 (오버레이 표시 등) */
   onEnterOverlayPhase?: () => void;
 };
 
 export function useProductGuide({
   windowKind,
+  userId,
+  serverGuideSeen = null,
+  onMarkSeen,
   onEnterOverlayPhase,
 }: UseProductGuideOptions) {
   const [session, setSession] = useState<GuideSession | null>(() =>
     readGuideSession(),
   );
-  const [complete, setComplete] = useState(() => isGuideComplete());
+  const [seen, setSeen] = useState(() =>
+    serverGuideSeen === true || hasUserSeenGuide(userId),
+  );
 
   const sync = useCallback(() => {
     setSession(readGuideSession());
-    setComplete(isGuideComplete());
-  }, []);
+    setSeen(
+      serverGuideSeen === true ||
+        (serverGuideSeen !== false && hasUserSeenGuide(userId)),
+    );
+  }, [userId, serverGuideSeen]);
+
+  useEffect(() => {
+    if (serverGuideSeen === true) {
+      setSeen(true);
+      return;
+    }
+    if (serverGuideSeen === false) {
+      setSeen(false);
+      return;
+    }
+    setSeen(hasUserSeenGuide(userId));
+  }, [userId, serverGuideSeen]);
 
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
       if (
         e.key === GUIDE_SESSION_KEY ||
-        e.key === "monibuddy.guide.v1" ||
+        e.key === GUIDE_STATE_KEY ||
         e.key === null
       ) {
         sync();
@@ -53,22 +84,54 @@ export function useProductGuide({
     };
   }, [sync]);
 
+  const recordSeen = useCallback(() => {
+    markUserSeenGuide(userId);
+    onMarkSeen?.();
+    setSeen(true);
+  }, [userId, onMarkSeen]);
+
+  /** 수동(?) 시작 — seen과 무관 */
   const start = useCallback((phase: GuidePhase = "settings", step = 0) => {
     const next = startGuideSession(phase, step);
     setSession(next);
   }, []);
 
-  /** ? 로 끄기 — 세션만 삭제 (완료 처리 안 함) */
+  /**
+   * 최초 1회 자동 시작.
+   * 서버가 이미 봄이면(또는 오프라인 캐시) 스킵. 시작하면 즉시 seen 처리.
+   */
+  const startAutoOnce = useCallback(
+    (phase: GuidePhase = "settings", step = 0) => {
+      const already =
+        serverGuideSeen === true ||
+        (serverGuideSeen == null && hasUserSeenGuide(userId));
+      if (already) {
+        clearGuideSession();
+        setSession(null);
+        setSeen(true);
+        return false;
+      }
+      recordSeen();
+      const next = startGuideSession(phase, step);
+      setSession(next);
+      return true;
+    },
+    [userId, serverGuideSeen, recordSeen],
+  );
+
+  /** 닫기 — 다시 자동으로 안 뜨게 seen 기록 */
   const dismiss = useCallback(() => {
+    recordSeen();
     clearGuideSession();
     setSession(null);
-  }, []);
+  }, [recordSeen]);
 
   const skipAndComplete = useCallback(() => {
-    markGuideComplete();
+    markGuideComplete(userId);
+    onMarkSeen?.();
     setSession(null);
-    setComplete(true);
-  }, []);
+    setSeen(true);
+  }, [userId, onMarkSeen]);
 
   const next = useCallback(() => {
     const cur = readGuideSession();
@@ -82,9 +145,10 @@ export function useProductGuide({
         setSession(nextSession);
         return;
       }
-      markGuideComplete();
+      markGuideComplete(userId);
+      onMarkSeen?.();
       setSession(null);
-      setComplete(true);
+      setSeen(true);
       return;
     }
 
@@ -94,7 +158,7 @@ export function useProductGuide({
     };
     writeGuideSession(nextSession);
     setSession(nextSession);
-  }, [onEnterOverlayPhase]);
+  }, [onEnterOverlayPhase, userId, onMarkSeen]);
 
   const prev = useCallback(() => {
     const cur = readGuideSession();
@@ -140,13 +204,15 @@ export function useProductGuide({
 
   return {
     session,
-    isComplete: complete,
+    isComplete: seen,
+    hasSeen: seen,
     /** 이 창에서 스포트라이트를 그릴지 */
     activeForWindow,
     stepDef,
     stepIndex,
     stepTotal,
     start,
+    startAutoOnce,
     dismiss,
     skipAndComplete,
     next,
