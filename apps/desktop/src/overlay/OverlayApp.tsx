@@ -54,7 +54,11 @@ import {
   type OverlayNotice,
 } from "../lib/overlayBridge";
 import { readDeviceIdentity } from "../lib/deviceIdentity";
-import { requestServerGuideMarkSeen } from "../lib/productGuide";
+import {
+  clearOrphanSettingsGuideSession,
+  readGuideSession,
+  requestServerGuideMarkSeen,
+} from "../lib/productGuide";
 import { useProductGuide } from "../hooks/useProductGuide";
 import { invokeSafe, isTauri, setClickThrough } from "../lib/tauri";
 import { LetterReveal, type LetterItem } from "./LetterReveal";
@@ -329,8 +333,9 @@ export function OverlayApp() {
   const captureFreezeStickyUntilRef = useRef(0);
   /** 오버레이 가이드 진행 중 — 클릭 통과 비활성 */
   const guideActiveRef = useRef(false);
-  /** 설정 창 가이드 중 — 오버레이가 클릭을 가로채지 않음 */
+  /** 설정 창 가이드 중 — 오버레이가 클릭을 가로채지 않음 (설정 창이 실제로 보일 때만) */
   const settingsGuidePassRef = useRef(false);
+  const settingsVisibleRef = useRef(false);
   /** 초대 말풍선(입장/거절) 표시 중 — 클릭 통과 비활성 */
   const inviteUiRef = useRef(false);
   /** 편지/계란 클릭 캡처 범위: none | icon(하단) | full */
@@ -347,8 +352,11 @@ export function OverlayApp() {
     onMarkSeen: requestServerGuideMarkSeen,
   });
   guideActiveRef.current = guide.activeForWindow;
+  // 설정 phase 세션만 있고 설정 창이 안 보이면 클릭 통과 강제하지 않음
   settingsGuidePassRef.current = Boolean(
-    guide.session?.active && guide.session.phase === "settings",
+    guide.session?.active &&
+      guide.session.phase === "settings" &&
+      settingsVisibleRef.current,
   );
   inviteUiRef.current = Boolean(pendingInvite);
 
@@ -506,11 +514,46 @@ export function OverlayApp() {
   // 설정 창 가이드 중엔 오버레이 패널을 닫아 전체 화면 클릭 가로채기 방지
   useEffect(() => {
     if (!guide.session?.active || guide.session.phase !== "settings") return;
+    if (!settingsVisibleRef.current) return;
     setPanelOpen(false);
     setPlusOpen(false);
     setJoinOpen(false);
     setMoveOpen(false);
   }, [guide.session?.active, guide.session?.phase]);
+
+  // 고아 settings 가이드 세션 정리 (강제 종료 후 캐릭터 클릭 먹통 방지)
+  useEffect(() => {
+    if (!isTauri()) {
+      // 웹 프리뷰: 설정 창 없음 → settings phase 잔존 시 즉시 제거
+      if (clearOrphanSettingsGuideSession(false)) {
+        clickThroughSyncGenRef.current += 1;
+      }
+      return;
+    }
+    let alive = true;
+    const sync = async () => {
+      const visible = await invokeSafe<boolean>("is_settings_visible");
+      if (!alive) return;
+      const isVisible = visible === true;
+      settingsVisibleRef.current = isVisible;
+      if (clearOrphanSettingsGuideSession(isVisible)) {
+        clickThroughSyncGenRef.current += 1;
+        // 통과 고착 직후 캐시 무시하고 즉시 재적용
+        void setClickThrough(true, true);
+      }
+    };
+    void sync();
+    const id = window.setInterval(() => void sync(), 1000);
+    return () => {
+      alive = false;
+      window.clearInterval(id);
+    };
+  }, []);
+
+  // TTL 등으로 이미 무효화된 세션이면 마운트 시 한 번 더 맞춤
+  useEffect(() => {
+    readGuideSession();
+  }, []);
 
   const setCaptureFreeze = (frozen: boolean) => {
     if (frozen) {
@@ -1024,14 +1067,13 @@ export function OverlayApp() {
           // capture 중 주기 재적용 + 통과 모드에서도 안전망 재적용
           // (양보/실패로 ignore 상태가 어긋나면 화면 클릭 먹통)
           const forceResync =
-            !settingsGuidePassRef.current &&
-            (syncGen !== lastSyncGen ||
-              (capture && now - lastForceAt >= 500) ||
-              (!capture && now - lastForceAt >= 1500));
+            syncGen !== lastSyncGen ||
+            (capture && now - lastForceAt >= 500) ||
+            (!capture && now - lastForceAt >= 1500);
           if (lastCapture !== capture || forceResync) {
             lastSyncGen = syncGen;
             lastForceAt = now;
-            const ok = await setClickThrough(!capture);
+            const ok = await setClickThrough(!capture, forceResync);
             lastCapture = ok ? capture : null;
           }
         } catch {

@@ -5,6 +5,8 @@ export const GUIDE_CONTENT_VERSION = 1;
 export const GUIDE_STATE_KEY = "monibuddy.guide.v1";
 export const GUIDE_SESSION_KEY = "monibuddy.guideSession.v1";
 export const GUIDE_EVENT = "monibuddy:guide";
+/** 설정 가이드 세션 방치 시 오버레이 클릭 먹통 방지 — TTL 초과면 폐기 */
+export const GUIDE_SESSION_TTL_MS = 2 * 60 * 60 * 1000;
 /** 오버레이 창 → 설정 창 소켓으로 guide:markSeen 전달 */
 export const GUIDE_MARK_SEEN_REQUEST_KEY = "monibuddy.guide.markSeenRequest.v1";
 
@@ -191,15 +193,40 @@ export function readGuideSession(): GuideSession | null {
     if (!parsed.active) return null;
     if (parsed.phase !== "settings" && parsed.phase !== "overlay") return null;
     if (typeof parsed.step !== "number" || parsed.step < 0) return null;
+    const startedAt =
+      typeof parsed.startedAt === "number" ? parsed.startedAt : Date.now();
+    // 강제 종료 등으로 세션만 남은 경우 — 클릭 통과 고착 방지
+    if (Date.now() - startedAt > GUIDE_SESSION_TTL_MS) {
+      localStorage.removeItem(GUIDE_SESSION_KEY);
+      dispatchGuideEvent();
+      return null;
+    }
     return {
       active: true,
       phase: parsed.phase,
       step: parsed.step,
-      startedAt:
-        typeof parsed.startedAt === "number" ? parsed.startedAt : Date.now(),
+      startedAt,
     };
   } catch {
     return null;
+  }
+}
+
+/**
+ * 설정 창이 안 보이는데 settings phase 세션만 남은 고착을 해제.
+ * (작업관리자 종료 후 재실행 시 캐릭터 클릭 먹통의 주원인)
+ */
+export function clearOrphanSettingsGuideSession(settingsVisible: boolean): boolean {
+  if (settingsVisible) return false;
+  try {
+    const raw = localStorage.getItem(GUIDE_SESSION_KEY);
+    if (!raw) return false;
+    const parsed = JSON.parse(raw) as Partial<GuideSession>;
+    if (!parsed.active || parsed.phase !== "settings") return false;
+    clearGuideSession();
+    return true;
+  } catch {
+    return false;
   }
 }
 
