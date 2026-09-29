@@ -46,11 +46,12 @@ function readStorageDump() {
   } catch {
     guideSummary = guideSession?.slice(0, 80) ?? "(파싱 실패)";
   }
-  return { guideSummary, gameSummary, runtimeSummary, guideSession, gameState };
+  return { guideSummary, gameSummary, runtimeSummary };
 }
 
-/** F12 없는 배포본용 — 클릭 먹통 진단·응급 해제 */
+/** F12 없는 배포본용 — 클릭 먹통 진단·응급 해제 (기본 접힘) */
 export function ClickDebugPanel() {
+  const [open, setOpen] = useState(false);
   const [log, setLog] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -69,7 +70,7 @@ export function ClickDebugPanel() {
       `sessionNow: ${JSON.stringify(readGuideSession())}`,
     ];
     setLog(lines.join("\n"));
-    return { dump, rust, lines };
+    return { lines };
   };
 
   const clearStuck = async () => {
@@ -100,56 +101,64 @@ export function ClickDebugPanel() {
   };
 
   return (
-    <div className="mt-3 grid gap-2 rounded-xl border border-white/10 bg-black/25 p-3 text-left">
-      <div className="text-[0.72rem] font-semibold uppercase tracking-wider text-mute">
-        클릭 문제 진단
-      </div>
-      <p className="m-0 text-[0.72rem] leading-relaxed text-mute">
-        배포본은 F12가 막혀 있을 수 있어요. 아래를 눌러 상태를 보고, 안 되면 「먹통
-        해제」를 눌러 주세요.
-      </p>
-      <div className="flex flex-wrap gap-2">
-        <Btn
-          variant="ghost"
-          size="md"
-          disabled={busy}
-          onClick={() => void refresh()}
-        >
-          상태 보기
-        </Btn>
-        <Btn
-          variant="primary"
-          size="md"
-          disabled={busy}
-          onClick={() => void clearStuck()}
-        >
-          먹통 해제
-        </Btn>
-        {isTauri() ? (
-          <>
+    <div className="mt-2 grid gap-2 text-left">
+      <button
+        type="button"
+        className="border border-white/25 bg-transparent px-3 py-2 text-left text-[0.72rem] text-mute hover:border-white/50 hover:text-white"
+        onClick={() => setOpen((v) => !v)}
+      >
+        {open ? "▾" : "▸"} 클릭이 안 될 때 (진단)
+      </button>
+      {open ? (
+        <div className="grid gap-2 rounded-xl border border-white/10 bg-black/25 p-3">
+          <p className="m-0 text-[0.72rem] leading-relaxed text-mute">
+            「상태 보기」결과를 복사해 알려 주세요. 안 되면 「먹통 해제」를 눌러
+            보세요.
+          </p>
+          <div className="flex flex-wrap gap-2">
             <Btn
               variant="ghost"
               size="md"
               disabled={busy}
-              onClick={() => void openDevtools("settings")}
+              onClick={() => void refresh()}
             >
-              설정 DevTools
+              상태 보기
             </Btn>
             <Btn
-              variant="ghost"
+              variant="primary"
               size="md"
               disabled={busy}
-              onClick={() => void openDevtools("overlay")}
+              onClick={() => void clearStuck()}
             >
-              오버레이 DevTools
+              먹통 해제
             </Btn>
-          </>
-        ) : null}
-      </div>
-      {log ? (
-        <pre className="m-0 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-black/40 p-2 text-[0.68rem] leading-snug text-white/85">
-          {log}
-        </pre>
+            {isTauri() ? (
+              <>
+                <Btn
+                  variant="ghost"
+                  size="md"
+                  disabled={busy}
+                  onClick={() => void openDevtools("settings")}
+                >
+                  설정 DevTools
+                </Btn>
+                <Btn
+                  variant="ghost"
+                  size="md"
+                  disabled={busy}
+                  onClick={() => void openDevtools("overlay")}
+                >
+                  오버레이 DevTools
+                </Btn>
+              </>
+            ) : null}
+          </div>
+          {log ? (
+            <pre className="m-0 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-black/40 p-2 text-[0.68rem] leading-snug text-white/85">
+              {log}
+            </pre>
+          ) : null}
+        </div>
       ) : null}
     </div>
   );
