@@ -20,6 +20,9 @@ static CAPTURE_FREEZE: AtomicBool = AtomicBool::new(false);
 static OVERLAY_USER_VISIBLE: AtomicBool = AtomicBool::new(true);
 /// 마지막 click-through 적용값 (중복 set_ignore_cursor_events 방지)
 static CLICK_THROUGH: AtomicU8 = AtomicU8::new(255);
+/// z-order promote 쓰로틀 (set_click_through 경로에서는 올리지 않음)
+static LAST_Z_PROMOTE_MS: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
 /// 캡처 종료 후에도 토스트가 보이도록 양보를 유지할 시각
 static YIELD_UNTIL: Mutex<Option<Instant>> = Mutex::new(None);
 /// 이번 양보 세션이 시작된 시각 (하드 상한용)
@@ -43,16 +46,12 @@ fn set_click_through(app: AppHandle, enabled: bool) -> Result<(), String> {
     if YIELD_STATE.load(Ordering::SeqCst) != 0 {
         // 캐시를 무효화해 양보 종료 후 JS 재요청이 실제 적용되도록
         CLICK_THROUGH.store(255, Ordering::SeqCst);
-        return Ok(());
+        // JS가 “적용됨”으로 착각하지 않게 Err — 루프가 재시도함
+        return Err("yield-active".into());
     }
     let overlay = app
         .get_webview_window("overlay")
         .ok_or_else(|| "overlay window missing".to_string())?;
-
-    let settings_open = app
-        .get_webview_window("settings")
-        .and_then(|w| w.is_visible().ok())
-        .unwrap_or(false);
 
     // 영역 선택 중에는 항상 클릭 통과 (캡처 도구가 마우스를 받아야 함)
     let enabled = if IN_REGION_SELECT.load(Ordering::SeqCst) {
@@ -62,23 +61,19 @@ fn set_click_through(app: AppHandle, enabled: bool) -> Result<(), String> {
     };
 
     let next = if enabled { 1 } else { 0 };
-    let prev = CLICK_THROUGH.swap(next, Ordering::SeqCst);
+    let prev = CLICK_THROUGH.load(Ordering::SeqCst);
     if prev != next {
         overlay
             .set_ignore_cursor_events(enabled)
             .map_err(|e| e.to_string())?;
+        // 성공한 뒤에만 캐시 갱신 — 실패 시 다음 호출이 재시도
+        CLICK_THROUGH.store(next, Ordering::SeqCst);
     }
 
-    // 설정 창이 열려 있으면 overlay z-promote로 설정을 덮지 않음
-    // (초대 말풍선 히트 시 JS가 enabled=false로 넘기면 말풍선 클릭 가능)
-    if settings_open {
-        return Ok(());
-    }
-
-    if YIELD_STATE.load(Ordering::SeqCst) == 0 && OVERLAY_USER_VISIBLE.load(Ordering::SeqCst) {
-        let _ = overlay.set_always_on_top(true);
-        promote_overlay_zorder(&overlay);
-    }
+    // z-order promote는 여기서 하지 않음.
+    // (클릭 통과 루프마다 SetWindowPos → 간헐적 실패/입력 먹통 유발)
+    // topmost 유지는 백그라운드 스로틀 루프에서만 수행.
+    let _ = app;
     Ok(())
 }
 
@@ -380,7 +375,7 @@ fn promote_window_zorder(win: &tauri::WebviewWindow) {
     unsafe {
         let ex = GetWindowLongW(hwnd, GWL_EXSTYLE);
         SetWindowLongW(hwnd, GWL_EXSTYLE, ex | WS_EX_TOPMOST);
-        SetWindowPos(
+        let _ = SetWindowPos(
             hwnd,
             HWND_TOPMOST,
             0,
@@ -396,6 +391,16 @@ fn promote_window_zorder(win: &tauri::WebviewWindow) {
 fn promote_window_zorder(_win: &tauri::WebviewWindow) {}
 
 fn promote_overlay_zorder(overlay: &tauri::WebviewWindow) {
+    // 과도한 SetWindowPos 방지 (최소 1.5초 간격)
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    let prev = LAST_Z_PROMOTE_MS.load(Ordering::SeqCst);
+    if now_ms.saturating_sub(prev) < 1500 {
+        return;
+    }
+    LAST_Z_PROMOTE_MS.store(now_ms, Ordering::SeqCst);
     promote_window_zorder(overlay);
 }
 /// 캡처 세션 중 강제 표시 (양보 상태와 무관하게 show + topmost)
@@ -681,12 +686,19 @@ fn spawn_capture_yield_watcher(app: AppHandle) {
                 }
                 if OVERLAY_USER_VISIBLE.load(Ordering::SeqCst)
                     && YIELD_STATE.load(Ordering::SeqCst) == 0
-                    && last_topmost_refresh.elapsed() >= Duration::from_millis(500)
+                    && last_topmost_refresh.elapsed() >= Duration::from_secs(2)
                 {
                     last_topmost_refresh = Instant::now();
                     if let Some(overlay) = app.get_webview_window("overlay") {
-                        let _ = overlay.set_always_on_top(true);
-                        promote_overlay_zorder(&overlay);
+                        // 설정 창이 위에 있으면 z-promote로 덮지 않음
+                        let settings_open = app
+                            .get_webview_window("settings")
+                            .and_then(|w| w.is_visible().ok())
+                            .unwrap_or(false);
+                        if !settings_open {
+                            let _ = overlay.set_always_on_top(true);
+                            promote_overlay_zorder(&overlay);
+                        }
                     }
                 }
             }

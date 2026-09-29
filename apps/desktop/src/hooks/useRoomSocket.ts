@@ -11,13 +11,18 @@ import {
   type PresenceHelloAck,
   type RoomNoticePayload,
   type RoomSnapshot,
+  type BombState,
+  type BombExplodePayload,
+  type LadderState,
   SocketEvents,
   defaultCharState,
+  nicknamesEqual,
 } from "@monibuddy/shared";
 import { cacheGuideSeenFromServer } from "../lib/productGuide";
 import {
   writeOverlayNotice,
   writePendingInvite,
+  writeGameState,
 } from "../lib/overlayBridge";
 import { invokeSafe } from "../lib/tauri";
 
@@ -57,12 +62,20 @@ export function useRoomSocket(opts: Options) {
   const [resolvedUserId, setResolvedUserId] = useState<string | null>(null);
   /** null = 아직 PresenceHello 전, DB 기준 가이드 완료 여부 */
   const [guideSeen, setGuideSeen] = useState<boolean | null>(null);
+  const [bomb, setBomb] = useState<BombState | null>(null);
+  const [bombExplode, setBombExplode] = useState<BombExplodePayload | null>(
+    null,
+  );
+  const [ladder, setLadder] = useState<LadderState | null>(null);
+  const bombRef = useRef<BombState | null>(null);
   const seenIds = useRef(new Set<string>());
   const optsRef = useRef(opts);
   /** 입장 중인 방 코드. 의도적 퇴장 시에만 비움 — 끊겨도 유지해 재입장에 사용 */
   const roomCodeRef = useRef<string | null>(null);
+  const memberIdRef = useRef<string | null>(null);
   const rejoiningRef = useRef(false);
   optsRef.current = opts;
+  memberIdRef.current = memberId;
   const forcePolling = opts.forcePolling !== false;
 
   const clearRoomLocal = useCallback(() => {
@@ -252,6 +265,16 @@ export function useRoomSocket(opts: Options) {
       };
       const onChat = (msg: ChatMessage) => {
         if (seenIds.current.has(msg.id)) return;
+        // 지정 편지/계란: 보낸 사람·대상만 로컬에 보관 (다른 멤버 채팅창·오버레이 제외)
+        if (msg.targetNickname) {
+          const myNick = (optsRef.current.nickname || "").trim();
+          const fromMe = Boolean(
+            memberIdRef.current && msg.memberId === memberIdRef.current,
+          );
+          const forMe =
+            Boolean(myNick) && nicknamesEqual(myNick, msg.targetNickname);
+          if (!fromMe && !forMe) return;
+        }
         seenIds.current.add(msg.id);
         setMessages((prev) => [...prev, msg].slice(-50));
       };
@@ -302,6 +325,41 @@ export function useRoomSocket(opts: Options) {
           writeOverlayNotice(`${nick}님이 나갔습니다`);
         }
       };
+      const onBombSync = (state: BombState) => {
+        const prev = bombRef.current;
+        bombRef.current = state;
+        setBomb(state);
+        setBombExplode(null);
+        if (!prev || prev.endsAt !== state.endsAt) {
+          writeOverlayNotice(
+            "폭탄 게임 시작! 폭탄을 클릭해 상대에게 넘겨보세요",
+          );
+        } else if (prev.holderMemberId !== state.holderMemberId) {
+          writeOverlayNotice(
+            `${state.holderNickname}님에게 폭탄이 넘어갔어요`,
+          );
+        }
+      };
+      const onBombExplode = (payload: BombExplodePayload) => {
+        bombRef.current = null;
+        setBomb(null);
+        setBombExplode((prev) => {
+          // 이미 같은 endsAt 폭발이거나 연출 중이면 덮지 않음 (짧은 재재생 방지)
+          if (
+            prev &&
+            (prev.at === payload.at || Date.now() - prev.at < 2000)
+          ) {
+            return prev;
+          }
+          return payload;
+        });
+      };
+      const onLadderSync = (state: LadderState) => {
+        setLadder(state);
+      };
+      const onLadderCancel = () => {
+        setLadder(null);
+      };
 
       socket.on("connect", onConnect);
       socket.on("disconnect", onDisconnect);
@@ -313,6 +371,10 @@ export function useRoomSocket(opts: Options) {
       socket.on(SocketEvents.FriendPresence, onFriendPresence);
       socket.on(SocketEvents.FriendInviteRecv, onInvite);
       socket.on(SocketEvents.RoomNotice, onRoomNotice);
+      socket.on(SocketEvents.BombSync, onBombSync);
+      socket.on(SocketEvents.BombExplode, onBombExplode);
+      socket.on(SocketEvents.LadderSync, onLadderSync);
+      socket.on(SocketEvents.LadderCancel, onLadderCancel);
     };
 
     void connect();
@@ -418,8 +480,59 @@ export function useRoomSocket(opts: Options) {
     setMemberId(null);
     setMembers([]);
     setMessages([]);
+    bombRef.current = null;
+    setBomb(null);
+    setBombExplode(null);
+    setLadder(null);
     seenIds.current.clear();
   }, []);
+
+  const passBomb = useCallback(
+    (optsPass?: { random?: boolean; targetNickname?: string }) => {
+      socketRef.current?.emit(SocketEvents.BombPass, {
+        random: optsPass?.random ?? !optsPass?.targetNickname,
+        targetNickname: optsPass?.targetNickname,
+      });
+    },
+    [],
+  );
+
+  const openLadder = useCallback(() => {
+    socketRef.current?.emit(SocketEvents.LadderOpen);
+  }, []);
+
+  const startLadder = useCallback(
+    (payload: {
+      memberIds: string[];
+      outcomes?: string[];
+      mode?: "winlose" | "custom";
+    }) => {
+      socketRef.current?.emit(SocketEvents.LadderStart, payload);
+    },
+    [],
+  );
+
+  const cancelLadder = useCallback(() => {
+    socketRef.current?.emit(SocketEvents.LadderCancel);
+  }, []);
+
+  const clearBombExplode = useCallback(() => setBombExplode(null), []);
+
+  useEffect(() => {
+    writeGameState({
+      bomb,
+      ladder,
+      bombExplode,
+      at: Date.now(),
+    });
+  }, [bomb, ladder, bombExplode]);
+
+  useEffect(() => {
+    if (!bombExplode) return;
+    // 스프라이트 ~1s + 여유 — 클리어 후에도 overlay playedAt으로 재적용 차단
+    const t = window.setTimeout(() => setBombExplode(null), 2200);
+    return () => window.clearTimeout(t);
+  }, [bombExplode]);
 
   const sendChat = useCallback((text: string) => {
     const trimmed = text.trim();
@@ -726,6 +839,9 @@ export function useRoomSocket(opts: Options) {
     resolvedUserId,
     friendsReady,
     guideSeen,
+    bomb,
+    bombExplode,
+    ladder,
     createRoom,
     joinRoom,
     leaveRoom,
@@ -743,5 +859,10 @@ export function useRoomSocket(opts: Options) {
     setPendingInvite,
     setFriendError,
     markGuideSeen,
+    passBomb,
+    openLadder,
+    startLadder,
+    cancelLadder,
+    clearBombExplode,
   };
 }

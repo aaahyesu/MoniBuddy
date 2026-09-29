@@ -109,29 +109,41 @@ function stripTargetToken(token: string) {
   return token.replace(/^@/, "").trim().normalize("NFC");
 }
 
+/** 닉네임 동일 여부 (NFC·대소문자 무시) */
+export function nicknamesEqual(a: string, b: string): boolean {
+  const left = stripTargetToken(a).toLowerCase();
+  const right = stripTargetToken(b).toLowerCase();
+  return Boolean(left) && left === right;
+}
+
 function matchNickname(candidate: string, nicknames: string[]) {
   const key = stripTargetToken(candidate).toLowerCase();
   if (!key) return undefined;
-  const normalized = nicknames
-    .map((n) => n.trim().normalize("NFC"))
-    .filter(Boolean);
-  const exact = normalized.find((n) => n.toLowerCase() === key);
-  if (exact) return exact;
-  // 유일한 접두/포함 매치면 허용 (짧은 닉 오타·일부 입력)
-  if (key.length >= 2) {
-    const prefixed = normalized.filter((n) => n.toLowerCase().startsWith(key));
-    if (prefixed.length === 1) return prefixed[0];
-    const includes = normalized.filter((n) => n.toLowerCase().includes(key));
-    if (includes.length === 1) return includes[0];
+  const entries = nicknames
+    .map((n) => ({ raw: n.trim(), norm: n.trim().normalize("NFC") }))
+    .filter((e) => e.norm);
+  const exact = entries.find((e) => e.norm.toLowerCase() === key);
+  if (exact) return exact.raw;
+  // 유일한 접두/포함 매치면 허용 (한글 1글자 닉 일부 입력 포함)
+  if (key.length >= 1) {
+    const prefixed = entries.filter((e) =>
+      e.norm.toLowerCase().startsWith(key),
+    );
+    if (prefixed.length === 1) return prefixed[0].raw;
+    const includes = entries.filter((e) =>
+      e.norm.toLowerCase().includes(key),
+    );
+    if (includes.length === 1) return includes[0].raw;
   }
   return undefined;
 }
 
 /**
  * `/편지 [닉] 내용`, `/계란 [닉]`
- * - `/편지 안녕` → 전원 (토큰 1개 = 본문)
- * - `/편지 닉 내용` → 닉은 항상 대상으로 분리. 방에 없으면 drop(빈 text)
- * - `/계란` / `/계란 닉` 동일
+ * - `/편지 안녕` → 전원 (토큰 1개·방 닉 아님 = 본문)
+ * - `/편지 민수` → 대상만 지정(본문 대기) — 힌트 `→민수`
+ * - `/편지 민수 안녕` → 대상+본문 (닉은 본문에 넣지 않음)
+ * - 방 닉 목록에 없어도 2토큰이면 첫 토큰을 대상으로 유지(서버 최종 매칭)
  */
 export function parseEffectChat(
   raw: string,
@@ -145,26 +157,39 @@ export function parseEffectChat(
     if (!egg[1]) return { kind: "egg", text: "계란" };
     const token = stripTargetToken(egg[1]);
     const hit = matchNickname(token, nicks);
-    if (hit) return { kind: "egg", text: "계란", targetNickname: hit };
-    return { kind: "egg", text: "", targetNickname: token };
+    return { kind: "egg", text: "계란", targetNickname: hit ?? token };
   }
 
   const letterBody = trimmed.match(/^\/(?:편지|letter)\s+([\s\S]*)$/i);
   if (letterBody) {
     const rest = letterBody[1].trim();
     if (!rest) return { kind: "letter", text: "" };
+
     const parts = rest.match(/^(@?\S+)\s+([\s\S]+)$/);
     if (parts) {
       const token = stripTargetToken(parts[1]);
       const body = parts[2].trim();
-      if (!body) return { kind: "letter", text: "" };
-      const hit = matchNickname(token, nicks);
-      // 두 토큰 이상이면 첫 토큰은 항상 닉으로 분리 (본문에 닉 포함 금지)
-      if (hit) {
-        return { kind: "letter", text: body, targetNickname: hit };
+      if (!body) {
+        // `/편지 닉 ` 처럼 본문 없음 — 닉이면 대상으로 표시
+        const hitOnly = matchNickname(token, nicks);
+        if (hitOnly) {
+          return { kind: "letter", text: "", targetNickname: hitOnly };
+        }
+        return { kind: "letter", text: "", targetNickname: token };
       }
-      // 방에 없는 닉 → drop (본문으로 합치지 않음)
-      return { kind: "letter", text: "", targetNickname: token };
+      const hit = matchNickname(token, nicks);
+      return {
+        kind: "letter",
+        text: body,
+        targetNickname: hit ?? token,
+      };
+    }
+
+    // 토큰 1개: 방 멤버 닉이면 대상(본문 대기), 아니면 전원 본문
+    const token = stripTargetToken(rest);
+    const hit = matchNickname(token, nicks);
+    if (hit) {
+      return { kind: "letter", text: "", targetNickname: hit };
     }
     return { kind: "letter", text: rest };
   }
@@ -191,6 +216,165 @@ export function isLetterChatDraft(raw: string): boolean {
 /** `/계란` 또는 `/계란 닉네임` */
 export function isEggChat(raw: string): boolean {
   return /^\/(?:계란|egg)(?:\s+@?\S+)?\s*$/i.test(String(raw ?? "").trim());
+}
+
+export function isBombChatDraft(raw: string): boolean {
+  return /^\/(?:폭탄|bomb)(\s|$)/i.test(String(raw ?? "").trim());
+}
+
+export function isLadderChatDraft(raw: string): boolean {
+  return /^\/(?:사다리|ladder)(\s|$)/i.test(String(raw ?? "").trim());
+}
+
+export type MiniGameParse =
+  | { kind: "bomb-start"; seconds: number; random: boolean }
+  | { kind: "bomb-pass"; targetNickname?: string; random: boolean }
+  | { kind: "ladder-open" }
+  | { kind: "none" };
+
+/** `/폭탄 30` · `/폭탄 랜덤` · `/폭탄 넘겨 [닉]` · `/사다리` */
+export function parseMiniGameChat(raw: string): MiniGameParse {
+  const trimmed = String(raw ?? "").trim().normalize("NFC");
+  const bombRandom = trimmed.match(/^\/(?:폭탄|bomb)\s+(?:랜덤|random)\s*$/i);
+  if (bombRandom) {
+    return { kind: "bomb-start", seconds: 0, random: true };
+  }
+  const bombStart = trimmed.match(/^\/(?:폭탄|bomb)\s+(\d+)\s*$/i);
+  if (bombStart) {
+    const seconds = Math.max(5, Math.min(120, Number(bombStart[1]) || 30));
+    return { kind: "bomb-start", seconds, random: false };
+  }
+  const bombPass = trimmed.match(
+    /^\/(?:폭탄|bomb)\s+(?:넘겨|pass)(?:\s+(@?\S+))?\s*$/i,
+  );
+  if (bombPass) {
+    if (bombPass[1]) {
+      return {
+        kind: "bomb-pass",
+        targetNickname: stripTargetToken(bombPass[1]),
+        random: false,
+      };
+    }
+    return { kind: "bomb-pass", random: true };
+  }
+  if (/^\/(?:사다리|ladder)\s*$/i.test(trimmed)) {
+    return { kind: "ladder-open" };
+  }
+  return { kind: "none" };
+}
+
+export type BombState = {
+  endsAt: number;
+  durationSec: number;
+  holderMemberId: string;
+  holderNickname: string;
+  startedByMemberId: string;
+};
+
+export type BombExplodePayload = {
+  holderMemberId: string;
+  holderNickname: string;
+  at: number;
+};
+
+export type BombStartPayload = { seconds?: number; random?: boolean };
+export type BombPassPayload = {
+  random?: boolean;
+  targetNickname?: string;
+};
+
+export type BombAck = { ok: true; bomb: BombState } | { ok: false; error: string };
+
+/** rungs[row][gap] = true → gap와 gap+1 열을 가로로 연결 */
+export type LadderState = {
+  hostMemberId: string;
+  hostNickname: string;
+  names: string[];
+  memberIds: string[];
+  outcomes: string[];
+  rungs: boolean[][];
+  phase: "setup" | "running" | "done";
+  /** phase=done 일 때 name → outcome */
+  results?: Array<{ name: string; outcome: string }>;
+};
+
+export type LadderStartPayload = {
+  memberIds: string[];
+  /** 길이는 memberIds와 동일. 비우면 꽝/당첨 자동 */
+  outcomes?: string[];
+  mode?: "winlose" | "custom";
+};
+
+export type LadderAck =
+  | { ok: true; ladder: LadderState }
+  | { ok: false; error: string };
+
+export function generateLadderRungs(
+  columns: number,
+  rows = 10,
+): boolean[][] {
+  const n = Math.max(1, columns);
+  const rungs: boolean[][] = [];
+  for (let row = 0; row < rows; row++) {
+    const line: boolean[] = [];
+    let skipNext = false;
+    for (let gap = 0; gap < n - 1; gap++) {
+      if (skipNext) {
+        line.push(false);
+        skipNext = false;
+        continue;
+      }
+      const put = Math.random() < 0.45;
+      line.push(put);
+      if (put) skipNext = true;
+    }
+    rungs.push(line);
+  }
+  return rungs;
+}
+
+/** 각 시작 열의 최종 열 인덱스 */
+export function resolveLadderPaths(
+  columns: number,
+  rungs: boolean[][],
+): number[] {
+  const ends: number[] = [];
+  for (let start = 0; start < columns; start++) {
+    let col = start;
+    for (const row of rungs) {
+      if (col > 0 && row[col - 1]) col -= 1;
+      else if (col < columns - 1 && row[col]) col += 1;
+    }
+    ends.push(col);
+  }
+  return ends;
+}
+
+/** 시작 열 → 각 가로줄 통과 후 열 (연출용) */
+export function traceLadderPath(
+  startCol: number,
+  columns: number,
+  rungs: boolean[][],
+): Array<{ col: number; row: number }> {
+  const points: Array<{ col: number; row: number }> = [
+    { col: startCol, row: 0 },
+  ];
+  let col = startCol;
+  for (let ri = 0; ri < rungs.length; ri++) {
+    const row = rungs[ri]!;
+    if (col > 0 && row[col - 1]) col -= 1;
+    else if (col < columns - 1 && row[col]) col += 1;
+    points.push({ col, row: ri + 1 });
+  }
+  return points;
+}
+
+export function shuffleInPlace<T>(arr: T[]): T[] {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j]!, arr[i]!];
+  }
+  return arr;
 }
 
 export type RoomSnapshot = {
@@ -221,6 +405,14 @@ export const SocketEvents = {
   FriendGroupAssign: "friend:group-assign",
   RoomNotice: "room:notice",
   GuideMarkSeen: "guide:markSeen",
+  BombStart: "bomb:start",
+  BombPass: "bomb:pass",
+  BombSync: "bomb:sync",
+  BombExplode: "bomb:explode",
+  LadderOpen: "ladder:open",
+  LadderStart: "ladder:start",
+  LadderSync: "ladder:sync",
+  LadderCancel: "ladder:cancel",
 } as const;
 
 export type FriendGroup = {

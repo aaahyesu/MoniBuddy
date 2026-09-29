@@ -96,3 +96,66 @@ export function clearOverlayNotice() {
   localStorage.removeItem(OVERLAY_NOTICE_KEY);
   dispatch(OVERLAY_NOTICE_EVENT);
 }
+
+export const GAME_PENDING_KEY = "monibuddy.gamePending.v1";
+export const GAME_PENDING_EVENT = "monibuddy:gamePending";
+export const GAME_STATE_KEY = "monibuddy.gameState.v1";
+export const GAME_STATE_EVENT = "monibuddy:gameState";
+
+export type GamePendingAction =
+  | {
+      type: "bomb-pass";
+      random?: boolean;
+      targetNickname?: string;
+      at: number;
+    }
+  | {
+      type: "ladder-start";
+      memberIds: string[];
+      outcomes?: string[];
+      mode?: "winlose" | "custom";
+      at: number;
+    }
+  | { type: "ladder-cancel"; at: number }
+  | { type: "ladder-open"; at: number };
+
+export type GameBridgeState = {
+  bomb: import("@monibuddy/shared").BombState | null;
+  ladder: import("@monibuddy/shared").LadderState | null;
+  bombExplode: import("@monibuddy/shared").BombExplodePayload | null;
+  at: number;
+};
+
+export function writeGamePending(action: GamePendingAction) {
+  localStorage.setItem(GAME_PENDING_KEY, JSON.stringify(action));
+  dispatch(GAME_PENDING_EVENT);
+}
+
+export function readGamePending(): GamePendingAction | null {
+  try {
+    const raw = localStorage.getItem(GAME_PENDING_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as GamePendingAction;
+  } catch {
+    return null;
+  }
+}
+
+export function clearGamePending() {
+  localStorage.removeItem(GAME_PENDING_KEY);
+}
+
+export function writeGameState(state: GameBridgeState) {
+  localStorage.setItem(GAME_STATE_KEY, JSON.stringify(state));
+  dispatch(GAME_STATE_EVENT);
+}
+
+export function readGameState(): GameBridgeState | null {
+  try {
+    const raw = localStorage.getItem(GAME_STATE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as GameBridgeState;
+  } catch {
+    return null;
+  }
+}

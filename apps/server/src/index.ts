@@ -46,9 +46,11 @@ import {
   createInviteCode,
   defaultCharState,
   parseEffectChat,
+  nicknamesEqual,
 } from "@monibuddy/shared";
 import { mountDesktopUpdaterProxy } from "./desktopUpdater";
 import { FriendStore } from "./friendStore";
+import { attachMiniGames, type GameRoom } from "./miniGames";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const UPLOAD_DIR = path.resolve(__dirname, "../uploads");
@@ -64,11 +66,7 @@ function sanitizeStatusMessage(raw: unknown): string {
     .slice(0, 40);
 }
 
-type Room = {
-  code: string;
-  members: Map<string, Member>;
-  socketToMember: Map<string, string>;
-};
+type Room = GameRoom;
 
 const rooms = new Map<string, Room>();
 const socketRoom = new Map<string, string>();
@@ -272,6 +270,24 @@ function leaveSocket(socketId: string, opts?: { intentional?: boolean }) {
 }
 
 io.on("connection", (socket) => {
+  const games = attachMiniGames(io, rooms, (sid) => socketRoom.get(sid));
+
+  socket.on(SocketEvents.BombStart, (payload, ack) => {
+    games.startBomb(socket, payload ?? { seconds: 30 }, ack);
+  });
+  socket.on(SocketEvents.BombPass, (payload, ack) => {
+    games.passBomb(socket, payload ?? { random: true }, ack);
+  });
+  socket.on(SocketEvents.LadderOpen, (payload, ack) => {
+    games.openLadder(socket, payload, ack);
+  });
+  socket.on(SocketEvents.LadderStart, (payload, ack) => {
+    games.startLadder(socket, payload ?? { memberIds: [] }, ack);
+  });
+  socket.on(SocketEvents.LadderCancel, (payload, ack) => {
+    games.cancelLadder(socket, payload, ack);
+  });
+
   socket.on(SocketEvents.RoomCreate, (payload: RoomCreatePayload, ack?: (r: RoomCreateAck) => void) => {
     try {
       if (!payload?.nickname?.trim() || !payload.character) {
@@ -394,24 +410,29 @@ io.on("connection", (socket) => {
     if (!member) return;
 
     const nicknames = [...room.members.values()].map((m) => m.nickname);
-    const parsed = parseEffectChat(String(payload?.text ?? ""), nicknames);
+    const rawText = String(payload?.text ?? "");
+    if (games.handleChatCommand(socket, rawText)) return;
+
+    const parsed = parseEffectChat(rawText, nicknames);
 
     const emitToRoomOrTarget = (message: ChatMessage, targetNick?: string) => {
       if (!targetNick) {
         io.to(code).emit(SocketEvents.ChatBroadcast, message);
         return;
       }
-      const target = [...room.members.values()].find(
-        (m) =>
-          m.nickname.trim().toLowerCase() === targetNick.trim().toLowerCase(),
-      );
-      if (!target) return;
-      // 지정 대상만 (보낸 사람은 제외)
-      for (const [sid, mid] of room.socketToMember) {
-        if (mid === target.id) {
-          io.to(sid).emit(SocketEvents.ChatBroadcast, message);
-        }
-      }
+      // fuzzy + NFC: parseEffectChat이 준 닉을 방 멤버에 다시 고정
+      const resolved =
+        nicknames.find((n) => nicknamesEqual(n, targetNick)) ??
+        [...room.members.values()].find((m) =>
+          nicknamesEqual(m.nickname, targetNick),
+        )?.nickname;
+      if (!resolved) return;
+      // 방 전체에 브로드캐스트 — 클라가 targetNickname으로 연출 필터
+      // (소켓 id 단건 emit은 폴링/재연결 시 상대에게 안 뜨는 경우가 있음)
+      io.to(code).emit(SocketEvents.ChatBroadcast, {
+        ...message,
+        targetNickname: resolved,
+      });
     };
 
     if (parsed.kind === "egg") {
