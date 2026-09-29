@@ -9,6 +9,7 @@ import { RoomLobby } from "./components/RoomLobby";
 import { SimpleBuddyPicker } from "./components/SimpleBuddyPicker";
 import { Brand, Btn, Field, ShellCard, inputClass } from "./components/ui";
 import { ClickDebugPanel } from "./components/ClickDebugPanel";
+import { UpdateBanner } from "./components/UpdateBanner";
 import { useLocalProfile } from "./hooks/useLocalProfile";
 import { useProductGuide } from "./hooks/useProductGuide";
 import { useProgress } from "./hooks/useProgress";
