@@ -11,8 +11,14 @@ import {
   defaultCharState,
   isEggChat,
   isLetterChatDraft,
+  isBombChatDraft,
+  isLadderChatDraft,
+  nicknamesEqual,
   parseEffectChat,
   parseLetterChat,
+  type BombExplodePayload,
+  type BombState,
+  type LadderState,
 } from "@monibuddy/shared";
 import { GuideSpotlight } from "../components/GuideSpotlight";
 import { resolveDefaultServerUrl } from "../lib/serverUrl";
@@ -27,14 +33,21 @@ import {
 } from "../lib/borderPath";
 import { loadBuddyManifest, type BuddyDef } from "../lib/defaultBuddies";
 import { readProfile, writeStatusMessage } from "../hooks/useLocalProfile";
+import { BombBoom } from "./BombBoom";
+import { BombProp } from "./BombProp";
+import { LadderGame } from "./LadderGame";
 import {
+  GAME_STATE_EVENT,
+  GAME_STATE_KEY,
   OVERLAY_NOTICE_EVENT,
   OVERLAY_NOTICE_KEY,
   PENDING_INVITE_EVENT,
   PENDING_INVITE_KEY,
   clearOverlayNotice,
+  readGameState,
   readOverlayNotice,
   readPendingInvite,
+  writeGamePending,
   writeInviteAction,
   type OverlayNotice,
 } from "../lib/overlayBridge";
@@ -274,6 +287,12 @@ export function OverlayApp() {
   const [letterPhase, setLetterPhase] = useState<
     "icon" | "opening" | "revealed" | null
   >(null);
+  const [bomb, setBomb] = useState<BombState | null>(null);
+  const [bombExplode, setBombExplode] = useState<BombExplodePayload | null>(
+    null,
+  );
+  const [ladder, setLadder] = useState<LadderState | null>(null);
+  const [ladderDismissed, setLadderDismissed] = useState(false);
 
   const chatInputRef = useRef<HTMLInputElement>(null);
   const selfIdRef = useRef<string>("local");
@@ -336,26 +355,55 @@ export function OverlayApp() {
       }
       setOverlayNotice(n);
     };
+    const syncGames = () => {
+      const g = readGameState();
+      if (!g) {
+        setBomb(null);
+        setBombExplode(null);
+        setLadder(null);
+        return;
+      }
+      setBomb(g.bomb);
+      setBombExplode(g.bombExplode);
+      setLadder((prev) => {
+        if (!g.ladder) return null;
+        if (
+          !prev ||
+          prev.phase !== g.ladder.phase ||
+          prev.hostMemberId !== g.ladder.hostMemberId ||
+          prev.names.join("|") !== g.ladder.names.join("|")
+        ) {
+          setLadderDismissed(false);
+        }
+        return g.ladder;
+      });
+    };
     const onStorage = (e: StorageEvent) => {
       if (
         e.key === PENDING_INVITE_KEY ||
         e.key === OVERLAY_NOTICE_KEY ||
+        e.key === GAME_STATE_KEY ||
         e.key == null
       ) {
         syncInvite();
         syncNotice();
+        syncGames();
       }
     };
     window.addEventListener(PENDING_INVITE_EVENT, syncInvite);
     window.addEventListener(OVERLAY_NOTICE_EVENT, syncNotice);
+    window.addEventListener(GAME_STATE_EVENT, syncGames);
     window.addEventListener("storage", onStorage);
+    syncGames();
     const id = window.setInterval(() => {
       syncInvite();
       syncNotice();
+      syncGames();
     }, 400);
     return () => {
       window.removeEventListener(PENDING_INVITE_EVENT, syncInvite);
       window.removeEventListener(OVERLAY_NOTICE_EVENT, syncNotice);
+      window.removeEventListener(GAME_STATE_EVENT, syncGames);
       window.removeEventListener("storage", onStorage);
       window.clearInterval(id);
     };
@@ -602,13 +650,22 @@ export function OverlayApp() {
       for (const msg of rt?.messages ?? []) {
         if (seenChat.current.has(msg.id)) continue;
         seenChat.current.add(msg.id);
+
+        const selfId = selfIdRef.current;
+        const fromSelf =
+          msg.memberId === selfId ||
+          (selfId === "local" && msg.memberId === "local");
+        // 지정 편지/계란: 대상 닉만 연출 (보낸 사람·다른 멤버 제외)
+        if (msg.targetNickname) {
+          if (fromSelf) continue;
+          const myNick =
+            (rt?.members?.find((m) => m.id === selfId)?.nickname ||
+              profile.nickname ||
+              "").trim();
+          if (!myNick || !nicknamesEqual(myNick, msg.targetNickname)) continue;
+        }
+
         if (msg.kind === "egg" || isEggChat(msg.text || "")) {
-          const selfId = selfIdRef.current;
-          const fromSelf =
-            msg.memberId === selfId ||
-            (selfId === "local" && msg.memberId === "local");
-          // 지정 연출은 수신자만
-          if (fromSelf && msg.targetNickname) continue;
           if (fromSelf) {
             const now = Date.now();
             const idx = recentSelfEggs.current.findIndex((at) => now - at < 12000);
@@ -630,11 +687,6 @@ export function OverlayApp() {
         if (msg.kind === "letter" || letterBody) {
           const text = letterBody;
           if (!text) continue;
-          const selfId = selfIdRef.current;
-          const fromSelf =
-            msg.memberId === selfId ||
-            (selfId === "local" && msg.memberId === "local");
-          if (fromSelf && msg.targetNickname) continue;
           if (fromSelf) {
             const now = Date.now();
             const idx = recentSelfLetters.current.findIndex(
@@ -1310,32 +1362,46 @@ export function OverlayApp() {
   const hasLocalPins = Object.keys(localPins).length > 0;
   const activeLetter = letterQueue[0] ?? null;
   const activeEgg = !activeLetter ? (eggQueue[0] ?? null) : null;
-  effectHitRef.current = activeEgg
+  const selfMemberId =
+    selfIdRef.current && selfIdRef.current !== "local"
+      ? selfIdRef.current
+      : null;
+  const bombIsHolder = Boolean(
+    bomb && selfMemberId && bomb.holderMemberId === selfMemberId,
+  );
+  const showLadder = Boolean(ladder && !ladderDismissed);
+  effectHitRef.current = activeEgg || bombExplode || showLadder || bombIsHolder
     ? "full"
     : letterPhase === "icon"
       ? "icon"
       : letterPhase === "opening" || letterPhase === "revealed"
         ? "full"
         : "none";
-  const roomNicksForDraft = members
-    .map((m) => m.nickname?.trim())
-    .filter((n): n is string => Boolean(n));
+  const runtimeForNicks = readRuntime();
+  const roomNicksForDraft = [
+    ...members.map((m) => m.nickname?.trim() ?? ""),
+    ...(runtimeForNicks?.members ?? []).map((m) => m.nickname?.trim() ?? ""),
+  ].filter((n, i, arr) => Boolean(n) && arr.indexOf(n) === i);
   const effectDraft =
     composeMode === "chat" ? parseEffectChat(chat, roomNicksForDraft) : null;
   const eggDraft = effectDraft?.kind === "egg";
   const letterDraft = composeMode === "chat" && isLetterChatDraft(chat);
-  const targetHint =
-    effectDraft?.targetNickname
-      ? effectDraft.text
-        ? `→${effectDraft.targetNickname}`
-        : "닉 확인"
-      : "전원";
+  const bombDraft = composeMode === "chat" && isBombChatDraft(chat);
+  const ladderDraft = composeMode === "chat" && isLadderChatDraft(chat);
+  // 대상이 잡히면 본문 유무와 관계없이 →닉 (전원은 대상 없을 때만)
+  const targetHint = effectDraft?.targetNickname
+    ? `→${effectDraft.targetNickname}`
+    : "전원";
   const chatMaxLen =
-    letterDraft || eggDraft
+    letterDraft || eggDraft || bombDraft || ladderDraft
       ? MAX_CHAT_LENGTH + 40
       : composeMode === "status"
         ? 40
         : MAX_CHAT_LENGTH;
+  const peerNicksForBomb = members
+    .filter((m) => m.id !== bomb?.holderMemberId)
+    .map((m) => m.nickname?.trim() ?? "")
+    .filter(Boolean);
 
   return (
     <div className="overlay-root">
@@ -1357,9 +1423,32 @@ export function OverlayApp() {
           onDone={() => setEggQueue((prev) => prev.filter((id) => id !== activeEgg))}
         />
       )}
+      {bombExplode ? (
+        <BombBoom
+          payload={bombExplode}
+          onDone={() => setBombExplode(null)}
+        />
+      ) : null}
+      {showLadder && ladder ? (
+        <LadderGame
+          ladder={ladder}
+          members={members}
+          selfMemberId={selfMemberId}
+          onStart={(payload) =>
+            writeGamePending({ type: "ladder-start", ...payload, at: Date.now() })
+          }
+          onCancel={() =>
+            writeGamePending({ type: "ladder-cancel", at: Date.now() })
+          }
+          onDismissDone={() => setLadderDismissed(true)}
+        />
+      ) : null}
       {actors.map(({ member, x, y, edge, facing, bubble, isSelf, pinned }) => {
         const isDraggingThis = dragMemberId === member.id;
         const canDrag = isSelf || repositionMode;
+        const showBombOnThis = Boolean(
+          bomb && bomb.holderMemberId === member.id,
+        );
         return (
         <div
           key={member.id}
@@ -1396,6 +1485,29 @@ export function OverlayApp() {
                   : undefined
           }
         >
+          {showBombOnThis && bomb ? (
+            <BombProp
+              bomb={bomb}
+              isHolder={bombIsHolder && isSelf}
+              placeBelow={edge === "top"}
+              peerNicks={peerNicksForBomb}
+              onPassRandom={() =>
+                writeGamePending({
+                  type: "bomb-pass",
+                  random: true,
+                  at: Date.now(),
+                })
+              }
+              onPassNick={(nick) =>
+                writeGamePending({
+                  type: "bomb-pass",
+                  random: false,
+                  targetNickname: nick,
+                  at: Date.now(),
+                })
+              }
+            />
+          ) : null}
           {(() => {
             if (isSelf && pendingInvite) {
               const nick = pendingInvite.fromNickname.trim() || "친구";
@@ -1768,9 +1880,13 @@ export function OverlayApp() {
                     ? "/편지 [닉] 내용…"
                     : eggDraft
                       ? "/계란 [닉]"
-                      : inRoom
-                        ? "메시지 · /편지 닉 내용 · /계란 닉"
-                        : "혼잣말 · /편지 · /계란…"
+                      : bombDraft
+                        ? "/폭탄 초 · /폭탄 넘겨 [닉]"
+                        : ladderDraft
+                          ? "/사다리"
+                          : inRoom
+                            ? "메시지 · /편지 · /폭탄 · /사다리"
+                            : "혼잣말 · /편지 · /계란…"
               }
               onChange={(e) => setChat(e.target.value)}
               onKeyDown={(e) => {
@@ -1792,6 +1908,16 @@ export function OverlayApp() {
             {eggDraft && !letterDraft && (
               <span className="composer-letter-hint" aria-live="polite">
                 계란 · {targetHint}
+              </span>
+            )}
+            {bombDraft && !letterDraft && !eggDraft && (
+              <span className="composer-letter-hint" aria-live="polite">
+                폭탄
+              </span>
+            )}
+            {ladderDraft && !letterDraft && !eggDraft && !bombDraft && (
+              <span className="composer-letter-hint" aria-live="polite">
+                사다리
               </span>
             )}
             {composeMode === "status" && (

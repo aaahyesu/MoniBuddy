@@ -26,8 +26,11 @@ import {
 import { applyOverlayHotkey } from "./lib/overlayHotkey";
 import {
   clearInviteAction,
+  clearGamePending,
+  GAME_PENDING_EVENT,
   INVITE_ACTION_EVENT,
   readInviteAction,
+  readGamePending,
   readPendingInvite,
 } from "./lib/overlayBridge";
 import { persistActiveRoom } from "./overlay/OverlayApp";
@@ -271,6 +274,53 @@ export function App() {
       window.clearInterval(id);
     };
   }, [room.pendingInvite, room.joinRoom, room.setPendingInvite, progress]);
+
+  // Overlay → bomb/ladder actions
+  useEffect(() => {
+    const flush = () => {
+      try {
+        const action = readGamePending();
+        if (!action) return;
+        if (Date.now() - action.at > 12000) {
+          clearGamePending();
+          return;
+        }
+        clearGamePending();
+        if (action.type === "bomb-pass") {
+          room.passBomb({
+            random: action.random,
+            targetNickname: action.targetNickname,
+          });
+          return;
+        }
+        if (action.type === "ladder-open") {
+          room.openLadder();
+          return;
+        }
+        if (action.type === "ladder-start") {
+          room.startLadder({
+            memberIds: action.memberIds,
+            outcomes: action.outcomes,
+            mode: action.mode,
+          });
+          return;
+        }
+        if (action.type === "ladder-cancel") {
+          room.cancelLadder();
+        }
+      } catch {
+        /* ignore */
+      }
+    };
+    window.addEventListener(GAME_PENDING_EVENT, flush);
+    window.addEventListener("storage", flush);
+    const id = window.setInterval(flush, 400);
+    return () => {
+      window.removeEventListener(GAME_PENDING_EVENT, flush);
+      window.removeEventListener("storage", flush);
+      window.clearInterval(id);
+    };
+  }, [room.passBomb, room.openLadder, room.startLadder, room.cancelLadder]);
 
   // Overlay + menu → create / join / leave room
   useEffect(() => {
