@@ -5,6 +5,28 @@
 
 ---
 
+## v0.1.32 — 프로필 빈 화면(중앙 정렬 클립)
+
+**이슈:** [#59](https://github.com/aaahyesu/MoniBuddy/issues/59) 후속  
+**배포일:** 2026-09-29  
+**대상:** 데스크톱
+
+### 증상
+- 로비 프로필(캐릭터) 영역 클릭 시 별 배경만 보임
+
+### 원인
+- ShellCard `place-items-center`로 긴 카드 위쪽이 잘림(스크롤로도 복구 불가)
+- 가이드 활성 시 프로필로 가면 스포트라이트만 남을 수 있음
+
+### 수정
+- ShellCard 상단 정렬 + 스크롤
+- 프로필 진입 시 가이드 종료
+
+### 배포 체크
+- [ ] Release desktop `v0.1.32` 성공
+
+---
+
 ## v0.1.31 — 프로필 빈 화면(스크롤)
 
 **이슈:** [#59](https://github.com/aaahyesu/MoniBuddy/issues/59) 후속  
@@ -22,7 +44,7 @@
 - 클릭 진단 패널은 기본 접힘
 
 ### 배포 체크
-- [ ] Release desktop `v0.1.31` 성공
+- [x] Release desktop `v0.1.31` 성공
 
 ---
 
