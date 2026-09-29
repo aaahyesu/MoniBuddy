@@ -1,6 +1,6 @@
 [package]
 name = "monibuddy"
-version = "0.1.29"
+version = "0.1.30"
 description = "MoniBuddy — monitor-edge character buddies with invite chat"
 authors = ["MoniBuddy"]
 edition = "2021"
@@ -13,7 +13,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon"] }
+tauri = { version = "2", features = ["tray-icon", "devtools"] }
 tauri-plugin-autostart = "2"
 tauri-plugin-global-shortcut = "2"
 serde = { version = "1", features = ["derive"] }

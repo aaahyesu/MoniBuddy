@@ -240,9 +240,59 @@ fn get_cursor_pos(app: AppHandle) -> Result<(f64, f64), String> {
     Ok((x, y))
 }
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ClickDebugInfo {
+    click_through_cache: u8,
+    yield_state: u8,
+    in_region_select: bool,
+    overlay_user_visible: bool,
+    settings_visible: bool,
+}
+
 #[tauri::command]
-fn is_capture_freeze() -> bool {
-    CAPTURE_FREEZE.load(Ordering::SeqCst)
+fn get_click_debug(app: AppHandle) -> ClickDebugInfo {
+    ClickDebugInfo {
+        click_through_cache: CLICK_THROUGH.load(Ordering::SeqCst),
+        yield_state: YIELD_STATE.load(Ordering::SeqCst),
+        in_region_select: IN_REGION_SELECT.load(Ordering::SeqCst),
+        overlay_user_visible: OVERLAY_USER_VISIBLE.load(Ordering::SeqCst),
+        settings_visible: app
+            .get_webview_window("settings")
+            .and_then(|w| w.is_visible().ok())
+            .unwrap_or(false),
+    }
+}
+
+/// 배포본에서 F12가 막혀 있을 때 개발자 도구 강제 오픈
+#[tauri::command]
+fn open_devtools(app: AppHandle, label: String) -> Result<(), String> {
+    let win = app
+        .get_webview_window(&label)
+        .ok_or_else(|| format!("window '{label}' missing"))?;
+    #[cfg(any(debug_assertions, target_os = "windows", target_os = "macos", target_os = "linux"))]
+    {
+        win.open_devtools();
+    }
+    let _ = win;
+    Ok(())
+}
+
+/// 캐릭터 클릭 먹통 응급 해제 — ignore 끄고 캐시 무효화
+#[tauri::command]
+fn force_overlay_interactive(app: AppHandle) -> Result<(), String> {
+    let overlay = app
+        .get_webview_window("overlay")
+        .ok_or_else(|| "overlay window missing".to_string())?;
+    CLICK_THROUGH.store(255, Ordering::SeqCst);
+    overlay
+        .set_ignore_cursor_events(false)
+        .map_err(|e| e.to_string())?;
+    CLICK_THROUGH.store(0, Ordering::SeqCst);
+    let _ = overlay.show();
+    let _ = overlay.set_always_on_top(true);
+    promote_overlay_zorder(&overlay);
+    Ok(())
 }
 
 fn notify_capture_freeze(app: &AppHandle, frozen: bool) {
@@ -737,7 +787,10 @@ pub fn run() {
             show_invite_toast,
             hide_invite_toast,
             get_cursor_pos,
-            is_capture_freeze
+            is_capture_freeze,
+            get_click_debug,
+            open_devtools,
+            force_overlay_interactive
         ])
         .setup(|app| {
             #[cfg(desktop)]

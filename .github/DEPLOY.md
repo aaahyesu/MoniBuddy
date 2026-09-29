@@ -5,6 +5,25 @@
 
 ---
 
+## v0.1.30 — 클릭 진단 패널 (F12 대체)
+
+**이슈:** [#59](https://github.com/aaahyesu/MoniBuddy/issues/59) 후속  
+**배포일:** 2026-09-29  
+**대상:** 데스크톱
+
+### 변경
+- 설정 → 프로필에 **클릭 문제 진단** (상태 보기 / 먹통 해제 / DevTools 오픈)
+- `force_overlay_interactive` · `get_click_debug` · `open_devtools` 명령
+
+### 확인 방법
+1. 트레이 → 설정 → 프로필 하단 「상태 보기」결과 확인
+2. 「먹통 해제」후 캐릭터 클릭
+
+### 배포 체크
+- [ ] Release desktop `v0.1.30` 성공
+
+---
+
 ## v0.1.29 — 오버레이 캐릭터 클릭 먹통
 
 **이슈:** [#59](https://github.com/aaahyesu/MoniBuddy/issues/59)  
