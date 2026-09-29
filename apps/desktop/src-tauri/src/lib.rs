@@ -240,6 +240,11 @@ fn get_cursor_pos(app: AppHandle) -> Result<(f64, f64), String> {
     Ok((x, y))
 }
 
+#[tauri::command]
+fn is_capture_freeze() -> bool {
+    CAPTURE_FREEZE.load(Ordering::SeqCst)
+}
+
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ClickDebugInfo {
