@@ -450,6 +450,7 @@ export function App() {
     };
   }, [room.roomCode, room.sendChat, activeBuddyId, progress]);
   // 가이드(settings) 진행 중이면 로비에 앵커가 있도록 전환
+  // (프로필 등 긴 화면으로 가면 스포트라이트만 남아 빈 화면처럼 보임)
   useEffect(() => {
     if (!guide.activeForWindow) return;
     if (screen === "lobby" || screen === "onboarding" || screen === null) return;

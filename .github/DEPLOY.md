@@ -5,6 +5,27 @@
 
 ---
 
+## v0.1.31 — 프로필 빈 화면(스크롤)
+
+**이슈:** [#59](https://github.com/aaahyesu/MoniBuddy/issues/59) 후속  
+**배포일:** 2026-09-29  
+**대상:** 데스크톱
+
+### 증상
+- 설정 → 프로필 진입 시 배경만 보이고 내용이 안 보임
+
+### 원인
+- `body overflow:hidden` + ShellCard 세로 중앙 정렬 → 긴 프로필이 창 밖으로 잘림
+
+### 수정
+- ShellCard를 스크롤 가능한 뷰포트로 변경
+- 클릭 진단 패널은 기본 접힘
+
+### 배포 체크
+- [ ] Release desktop `v0.1.31` 성공
+
+---
+
 ## v0.1.30 — 클릭 진단 패널 (F12 대체)
 
 **이슈:** [#59](https://github.com/aaahyesu/MoniBuddy/issues/59) 후속  

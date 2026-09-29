@@ -10,15 +10,17 @@ type Props = {
 /** ADRIFT-inspired pixel panel: sharp white border + translucent black */
 export function ShellCard({ children, className, wide }: Props) {
   return (
-    <div className="grid min-h-screen place-items-center p-5">
-      <div
-        className={cn(
-          "grid w-full gap-4 border border-white bg-black/80 p-6 shadow-[0_0_0_1px_rgba(255,255,255,0.15)] backdrop-blur-[2px]",
-          wide ? "max-w-[520px]" : "max-w-[420px]",
-          className,
-        )}
-      >
-        {children}
+    <div className="fixed inset-0 overflow-y-auto overscroll-contain">
+      <div className="grid min-h-full place-items-center p-5">
+        <div
+          className={cn(
+            "grid w-full gap-4 border border-white bg-black/80 p-6 shadow-[0_0_0_1px_rgba(255,255,255,0.15)] backdrop-blur-[2px]",
+            wide ? "max-w-[520px]" : "max-w-[420px]",
+            className,
+          )}
+        >
+          {children}
+        </div>
       </div>
     </div>
   );
