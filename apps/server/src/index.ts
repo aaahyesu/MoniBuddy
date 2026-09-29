@@ -28,6 +28,7 @@ import {
   FriendRemoveAck,
   FriendRemovePayload,
   GIF_MAX_BYTES,
+  GuideMarkSeenAck,
   MAX_CHAT_LENGTH,
   MAX_ROOM_MEMBERS,
   Member,
@@ -405,9 +406,10 @@ io.on("connection", (socket) => {
           character: payload.character,
         });
         friends.setOnline(socket.id, user);
-        const [list, groups] = await Promise.all([
+        const [list, groups, guideSeen] = await Promise.all([
           friends.listFriends(user.userId),
           friends.listGroups(user.userId),
+          friends.isGuideSeen(user.userId),
         ]);
         ack?.({
           ok: true,
@@ -415,6 +417,7 @@ io.on("connection", (socket) => {
           friendCode: user.friendCode,
           friends: list,
           groups,
+          guideSeen,
         });
         const presence: FriendPresencePayload = {
           userId: user.userId,
@@ -429,6 +432,26 @@ io.on("connection", (socket) => {
         ack?.({
           ok: false,
           error: err instanceof Error ? err.message : "presence hello failed",
+        });
+      }
+    },
+  );
+
+  socket.on(
+    SocketEvents.GuideMarkSeen,
+    async (_payload?: unknown, ack?: (r: GuideMarkSeenAck) => void) => {
+      try {
+        const myId = friends.getUserIdBySocket(socket.id);
+        if (!myId) {
+          ack?.({ ok: false, error: "not registered" });
+          return;
+        }
+        await friends.markGuideSeen(myId);
+        ack?.({ ok: true });
+      } catch (err) {
+        ack?.({
+          ok: false,
+          error: err instanceof Error ? err.message : "guide mark failed",
         });
       }
     },

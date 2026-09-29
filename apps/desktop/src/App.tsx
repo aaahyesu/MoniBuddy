@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { APP_NAME } from "@monibuddy/shared";
 import { BuddySheet } from "./components/BuddySheet";
 import { GuideSpotlight } from "./components/GuideSpotlight";
@@ -18,7 +18,11 @@ import {
   readDeviceIdentity,
   writeDeviceIdentity,
 } from "./lib/deviceIdentity";
-import { isGuideComplete } from "./lib/productGuide";
+import {
+  clearGuideSession,
+  GUIDE_MARK_SEEN_REQUEST_KEY,
+  readGuideSession,
+} from "./lib/productGuide";
 import { applyOverlayHotkey } from "./lib/overlayHotkey";
 import {
   clearInviteAction,
@@ -66,10 +70,70 @@ export function App() {
     void invokeSafe("toggle_overlay", { visible: true });
   }, []);
 
+  const room = useRoomSocket({
+    serverUrl: profile.serverUrl,
+    nickname: profile.nickname || "Guest",
+    character: profile.character,
+    statusMessage: profile.statusMessage,
+    forcePolling: profile.forcePolling,
+    userId: device.userId,
+    friendCode: device.friendCode,
+  });
+
   const guide = useProductGuide({
     windowKind: "settings",
+    userId: room.resolvedUserId || device.userId,
+    serverGuideSeen: room.guideSeen,
+    onMarkSeen: room.markGuideSeen,
     onEnterOverlayPhase,
   });
+
+  // 서버가 이미 본 계정이면 남은 자동 가이드 세션만 정리
+  const clearedStaleGuideRef = useRef(false);
+  useEffect(() => {
+    if (clearedStaleGuideRef.current) return;
+    if (room.guideSeen !== true) return;
+    clearedStaleGuideRef.current = true;
+    if (readGuideSession()?.active) clearGuideSession();
+  }, [room.guideSeen]);
+
+  // PresenceHello 후 미확인이면 자동 가이드 1회
+  const autoGuideStartedRef = useRef(false);
+  useEffect(() => {
+    if (autoGuideStartedRef.current) return;
+    if (!ready || !profile.onboardingDone) return;
+    if (!room.friendsReady || room.guideSeen !== false) return;
+    autoGuideStartedRef.current = true;
+    setScreen("lobby");
+    window.requestAnimationFrame(() => {
+      guide.startAutoOnce("settings", 0);
+    });
+  }, [
+    ready,
+    profile.onboardingDone,
+    room.friendsReady,
+    room.guideSeen,
+    guide.startAutoOnce,
+  ]);
+
+  // 오버레이 창에서 온 markSeen 요청 → 소켓 emit
+  useEffect(() => {
+    const flush = () => {
+      try {
+        if (!localStorage.getItem(GUIDE_MARK_SEEN_REQUEST_KEY)) return;
+        localStorage.removeItem(GUIDE_MARK_SEEN_REQUEST_KEY);
+        room.markGuideSeen();
+      } catch {
+        /* ignore */
+      }
+    };
+    flush();
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === GUIDE_MARK_SEEN_REQUEST_KEY || e.key === null) flush();
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, [room.markGuideSeen]);
 
   const guideToggle = useMemo(
     () => ({
@@ -140,16 +204,6 @@ export function App() {
       window.removeEventListener("storage", onStorage);
     };
   }, []);
-
-  const room = useRoomSocket({
-    serverUrl: profile.serverUrl,
-    nickname: profile.nickname || "Guest",
-    character: profile.character,
-    statusMessage: profile.statusMessage,
-    forcePolling: profile.forcePolling,
-    userId: device.userId,
-    friendCode: device.friendCode,
-  });
 
   // 서버가 배정한 userId·friendCode를 기기에 저장 (재설치 전까지 동일 계정 유지)
   useEffect(() => {
@@ -383,9 +437,7 @@ export function App() {
           completeOnboarding();
           setScreen("lobby");
           void invokeSafe("toggle_overlay", { visible: true });
-          window.requestAnimationFrame(() => {
-            if (!isGuideComplete()) guide.start("settings", 0);
-          });
+          // 자동 가이드는 PresenceHello(guideSeen) 수신 후 effect에서 시작
         }}
       />
     );

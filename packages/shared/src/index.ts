@@ -220,6 +220,7 @@ export const SocketEvents = {
   FriendGroupDelete: "friend:group-delete",
   FriendGroupAssign: "friend:group-assign",
   RoomNotice: "room:notice",
+  GuideMarkSeen: "guide:markSeen",
 } as const;
 
 export type FriendGroup = {
@@ -257,8 +258,12 @@ export type PresenceHelloAck =
       friendCode: string;
       friends: FriendInfo[];
       groups: FriendGroup[];
+      /** DB에 가이드 이미 봄 여부 — 없으면 false로 취급 */
+      guideSeen: boolean;
     }
   | { ok: false; error: string };
+
+export type GuideMarkSeenAck = { ok: true } | { ok: false; error: string };
 
 export type FriendAddPayload = {
   friendCode: string;

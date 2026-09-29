@@ -114,6 +114,43 @@ export class FriendStore {
       "write",
     );
     await this.migrateLegacyFriendshipGroupId();
+    await this.migrateGuideSeenColumn();
+  }
+
+  /** users.guide_seen_at 컬럼 추가 */
+  private async migrateGuideSeenColumn() {
+    const info = await this.db.execute(`PRAGMA table_info(users)`);
+    const hasCol = info.rows.some(
+      (r) => String((r as Record<string, unknown>).name ?? r[1] ?? "") === "guide_seen_at",
+    );
+    if (hasCol) return;
+    await this.db.execute(
+      `ALTER TABLE users ADD COLUMN guide_seen_at INTEGER`,
+    );
+  }
+
+  async isGuideSeen(userId: string): Promise<boolean> {
+    const id = userId.trim();
+    if (!id) return false;
+    const rs = await this.db.execute({
+      sql: `SELECT guide_seen_at FROM users WHERE user_id = ?`,
+      args: [id],
+    });
+    const row = rs.rows[0] as Record<string, unknown> | undefined;
+    if (!row) return false;
+    const v = row.guide_seen_at;
+    return v != null && Number(v) > 0;
+  }
+
+  async markGuideSeen(userId: string): Promise<void> {
+    const id = userId.trim();
+    if (!id) return;
+    const already = await this.isGuideSeen(id);
+    if (already) return;
+    await this.db.execute({
+      sql: `UPDATE users SET guide_seen_at = ? WHERE user_id = ?`,
+      args: [Date.now(), id],
+    });
   }
 
   /** friendships.group_id(단일) → friend_group_members(다대다) 1회 이전 */

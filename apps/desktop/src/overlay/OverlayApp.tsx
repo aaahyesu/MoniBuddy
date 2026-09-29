@@ -38,6 +38,8 @@ import {
   writeInviteAction,
   type OverlayNotice,
 } from "../lib/overlayBridge";
+import { readDeviceIdentity } from "../lib/deviceIdentity";
+import { requestServerGuideMarkSeen } from "../lib/productGuide";
 import { useProductGuide } from "../hooks/useProductGuide";
 import { invokeSafe, isTauri } from "../lib/tauri";
 import { LetterReveal, type LetterItem } from "./LetterReveal";
@@ -312,7 +314,11 @@ export function OverlayApp() {
   const recentSelfLetters = useRef<Array<{ text: string; at: number }>>([]);
   const recentSelfEggs = useRef<number[]>([]);
 
-  const guide = useProductGuide({ windowKind: "overlay" });
+  const guide = useProductGuide({
+    windowKind: "overlay",
+    userId: readDeviceIdentity().userId,
+    onMarkSeen: requestServerGuideMarkSeen,
+  });
   guideActiveRef.current = guide.activeForWindow;
   settingsGuidePassRef.current = Boolean(
     guide.session?.active && guide.session.phase === "settings",
