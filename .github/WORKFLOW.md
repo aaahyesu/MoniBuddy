@@ -25,6 +25,8 @@
 
 ## 배포
 
+배포 시 증상·원인·수정·검증은 **[DEPLOY.md](./DEPLOY.md)** 에 버전별로 기록합니다.
+
 ### 데스크톱 설치본 (exe)
 - `main`에 push 되면 `Release desktop` 워크플로가 Windows NSIS 설치본을 빌드하고 GitHub Releases에 올립니다.
 - Releases 탭에서 `MoniBuddy_*_x64-setup.exe` 다운로드
