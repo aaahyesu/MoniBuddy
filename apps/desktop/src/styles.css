@@ -346,6 +346,20 @@
   gap: 0;
   min-height: 0;
 }
+.chat-log-list::-webkit-scrollbar {
+  width: 3px;
+  height: 3px;
+}
+.chat-log-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+.chat-log-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.55);
+  border-radius: 999px;
+}
+.chat-log-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.8);
+}
 .chat-log-empty {
   margin: 0;
   font-size: 12px;
@@ -364,7 +378,6 @@
   margin-right: 6px;
   font-size: 12px;
   font-weight: 700;
-  color: #9ad7ff;
 }
 .chat-log-line span {
   color: rgba(255, 255, 255, 0.92);
