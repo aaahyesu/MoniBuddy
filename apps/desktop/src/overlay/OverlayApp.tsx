@@ -82,6 +82,9 @@ const RUNTIME_KEY = "monibuddy.runtime.v1";
 const PENDING_CHAT_KEY = "monibuddy.pendingChat.v1";
 const PENDING_ROOM_KEY = "monibuddy.pendingRoom.v1";
 const MOVE_KEY = "monibuddy.moveSettings.v1";
+const CHAT_LOG_KEY = "monibuddy.chatLog.v1";
+const CHAT_LOG_KEEP_MS = 10 * 60 * 1000;
+const CHAT_LOG_MAX = 40;
 const LOCAL_PINS_KEY = "monibuddy.localPins.v1";
 /** @deprecated 이전 피어 전용 키 — 한 번 읽어서 마이그레이션 */
 const LEGACY_PEER_PINS_KEY = "monibuddy.peerPins.v1";
@@ -166,6 +169,91 @@ function readMoveSettings(): MoveSettings {
 
 function writeMoveSettings(next: MoveSettings) {
   localStorage.setItem(MOVE_KEY, JSON.stringify(next));
+}
+
+type ChatLogSettings = {
+  enabled: boolean;
+  opacity: number;
+  width: number;
+  /** 화면 왼쪽·위에서의 위치. 없으면 기본(왼쪽 하단) */
+  x?: number;
+  y?: number;
+};
+
+const CHAT_LOG_MIN_W = 220;
+const CHAT_LOG_MAX_W = 720;
+const DEFAULT_CHAT_LOG: ChatLogSettings = {
+  enabled: false,
+  opacity: 0.72,
+  width: 380,
+};
+
+function clampChatLogWidth(width: number): number {
+  const max = Math.min(
+    CHAT_LOG_MAX_W,
+    Math.max(CHAT_LOG_MIN_W, window.innerWidth - 32),
+  );
+  if (!Number.isFinite(width)) return DEFAULT_CHAT_LOG.width;
+  return Math.min(max, Math.max(CHAT_LOG_MIN_W, Math.round(width)));
+}
+
+function clampChatLogPos(
+  x: number,
+  y: number,
+  panelW: number,
+  panelH: number,
+): { x: number; y: number } {
+  const maxX = Math.max(8, window.innerWidth - Math.min(panelW, 120));
+  const maxY = Math.max(8, window.innerHeight - Math.min(panelH, 48));
+  return {
+    x: Math.round(Math.min(maxX, Math.max(8, x))),
+    y: Math.round(Math.min(maxY, Math.max(8, y))),
+  };
+}
+
+function readChatLogSettings(): ChatLogSettings {
+  try {
+    const raw = localStorage.getItem(CHAT_LOG_KEY);
+    if (!raw) return DEFAULT_CHAT_LOG;
+    const parsed = JSON.parse(raw) as Partial<ChatLogSettings>;
+    const opacity = Number(parsed.opacity);
+    const width = clampChatLogWidth(Number(parsed.width));
+    const x = Number(parsed.x);
+    const y = Number(parsed.y);
+    const placed =
+      Number.isFinite(x) && Number.isFinite(y)
+        ? clampChatLogPos(x, y, width, 260)
+        : {};
+    return {
+      enabled: Boolean(parsed.enabled),
+      opacity: Number.isFinite(opacity)
+        ? Math.min(0.95, Math.max(0.25, opacity))
+        : DEFAULT_CHAT_LOG.opacity,
+      width,
+      ...placed,
+    };
+  } catch {
+    return DEFAULT_CHAT_LOG;
+  }
+}
+
+function writeChatLogSettings(next: ChatLogSettings) {
+  localStorage.setItem(CHAT_LOG_KEY, JSON.stringify(next));
+}
+
+function isPlainRoomChat(msg: ChatMessage): boolean {
+  if (msg.kind === "letter" || msg.kind === "egg") return false;
+  if (msg.targetNickname) return false;
+  const text = msg.text || "";
+  if (isEggChat(text)) return false;
+  if (parseLetterChat(text).kind === "letter") return false;
+  return Boolean(text.trim());
+}
+
+function recentPlainChats(messages: ChatMessage[] | undefined, now = Date.now()) {
+  return (messages ?? [])
+    .filter((m) => isPlainRoomChat(m) && now - (m.at || 0) <= CHAT_LOG_KEEP_MS)
+    .slice(-CHAT_LOG_MAX);
 }
 
 function readLocalPins(): LocalPins {
@@ -270,6 +358,8 @@ export function OverlayApp() {
   const [joinOpen, setJoinOpen] = useState(false);
   const [joinCode, setJoinCode] = useState("");
   const [move, setMove] = useState<MoveSettings>(() => readMoveSettings());
+  const [chatLog, setChatLog] = useState<ChatLogSettings>(() => readChatLogSettings());
+  const [logLines, setLogLines] = useState<ChatMessage[]>([]);
   const [dragging, setDragging] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
   const [composeMode, setComposeMode] = useState<"chat" | "status">("chat");
@@ -311,6 +401,9 @@ export function OverlayApp() {
     Array<{ x: number; y: number; isSelf: boolean; memberId: string }>
   >([]);
   const panelOpenRef = useRef(false);
+  const chatLogRef = useRef(chatLog);
+  const chatLogElRef = useRef<HTMLDivElement | null>(null);
+  const chatLogListRef = useRef<HTMLDivElement | null>(null);
   const draggingRef = useRef(false);
   const repositionRef = useRef(false);
   /** Rust가 click-through를 강제로 바꾼 뒤 JS lastCapture와 어긋날 때 재동기화 */
@@ -567,6 +660,7 @@ export function OverlayApp() {
   };
 
   panelOpenRef.current = panelOpen;
+  chatLogRef.current = chatLog;
   draggingRef.current = dragging;
   repositionRef.current = repositionMode;
   sizeRef.current = size;
@@ -574,6 +668,12 @@ export function OverlayApp() {
   membersRef.current = members;
   localPinsRef.current = localPins;
   repositionDraftRef.current = repositionDraft;
+
+  useEffect(() => {
+    const el = chatLogListRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [logLines]);
 
   const setDraggingNow = (v: boolean) => {
     draggingRef.current = v;
@@ -792,6 +892,13 @@ export function OverlayApp() {
           ];
         });
       }
+
+      const nextLog = recentPlainChats(rt?.messages);
+      setLogLines((prev) => {
+        const prevKey = prev.map((m) => m.id).join("|");
+        const nextKey = nextLog.map((m) => m.id).join("|");
+        return prevKey === nextKey ? prev : nextLog;
+      });
 
       for (const msg of rt?.messages ?? []) {
         if (seenChat.current.has(msg.id)) continue;
@@ -1026,6 +1133,16 @@ export function OverlayApp() {
             !repositionRef.current &&
             cy >= h - 300 &&
             Math.abs(cx - w / 2) <= 360;
+          const logEl = chatLogElRef.current;
+          const logBox = logEl?.getBoundingClientRect();
+          const overChatLog = Boolean(
+            chatLogRef.current.enabled &&
+              logBox &&
+              cx >= logBox.left - 6 &&
+              cx <= logBox.right + 6 &&
+              cy >= logBox.top - 6 &&
+              cy <= logBox.bottom + 6,
+          );
           const overRepositionBar =
             repositionRef.current &&
             cy >= h - 90 &&
@@ -1058,6 +1175,7 @@ export function OverlayApp() {
               overEffectFull ||
               overActor ||
               overChat ||
+              overChatLog ||
               overRepositionBar ||
               draggingRef.current ||
               repositionRef.current ||
@@ -1634,6 +1752,129 @@ export function OverlayApp() {
 
   return (
     <div className="overlay-root">
+      {chatLog.enabled ? (
+        <aside
+          ref={chatLogElRef}
+          className="chat-log"
+          style={{
+            ["--log-opacity" as string]: String(chatLog.opacity),
+            width: chatLog.width,
+            ...(chatLog.x != null && chatLog.y != null
+              ? { left: chatLog.x, top: chatLog.y, bottom: "auto" }
+              : {}),
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          <div
+            className="chat-log-resize"
+            aria-hidden
+            onPointerDown={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              const handle = e.currentTarget;
+              handle.setPointerCapture(e.pointerId);
+              const startX = e.clientX;
+              const startW = chatLog.width;
+              const onMove = (ev: PointerEvent) => {
+                const width = clampChatLogWidth(startW + (ev.clientX - startX));
+                setChatLog((prev) =>
+                  prev.width === width ? prev : { ...prev, width },
+                );
+              };
+              const onUp = (ev: PointerEvent) => {
+                handle.removeEventListener("pointermove", onMove);
+                handle.removeEventListener("pointerup", onUp);
+                handle.removeEventListener("pointercancel", onUp);
+                const width = clampChatLogWidth(startW + (ev.clientX - startX));
+                setChatLog((prev) => {
+                  const next = { ...prev, width };
+                  writeChatLogSettings(next);
+                  return next;
+                });
+              };
+              handle.addEventListener("pointermove", onMove);
+              handle.addEventListener("pointerup", onUp);
+              handle.addEventListener("pointercancel", onUp);
+            }}
+          />
+          <div
+            className="chat-log-head"
+            onPointerDown={(e) => {
+              if ((e.target as HTMLElement).closest(".chat-log-close")) return;
+              e.stopPropagation();
+              e.preventDefault();
+              const head = e.currentTarget;
+              head.setPointerCapture(e.pointerId);
+              const box = chatLogElRef.current?.getBoundingClientRect();
+              const originX = box?.left ?? 16;
+              const originY = box?.top ?? 16;
+              const panelW = box?.width ?? chatLog.width;
+              const panelH = box?.height ?? 260;
+              const startX = e.clientX;
+              const startY = e.clientY;
+              const onMove = (ev: PointerEvent) => {
+                const pos = clampChatLogPos(
+                  originX + (ev.clientX - startX),
+                  originY + (ev.clientY - startY),
+                  panelW,
+                  panelH,
+                );
+                setChatLog((prev) =>
+                  prev.x === pos.x && prev.y === pos.y ? prev : { ...prev, ...pos },
+                );
+              };
+              const onUp = (ev: PointerEvent) => {
+                head.removeEventListener("pointermove", onMove);
+                head.removeEventListener("pointerup", onUp);
+                head.removeEventListener("pointercancel", onUp);
+                const pos = clampChatLogPos(
+                  originX + (ev.clientX - startX),
+                  originY + (ev.clientY - startY),
+                  panelW,
+                  panelH,
+                );
+                setChatLog((prev) => {
+                  const next = { ...prev, ...pos };
+                  writeChatLogSettings(next);
+                  return next;
+                });
+              };
+              head.addEventListener("pointermove", onMove);
+              head.addEventListener("pointerup", onUp);
+              head.addEventListener("pointercancel", onUp);
+            }}
+          >
+            <div className="chat-log-title">채팅 기록</div>
+            <button
+              type="button"
+              className="chat-log-close"
+              aria-label="채팅 기록 닫기"
+              onClick={(e) => {
+                e.stopPropagation();
+                const next = { ...chatLog, enabled: false };
+                setChatLog(next);
+                writeChatLogSettings(next);
+              }}
+            >
+              ✕
+            </button>
+          </div>
+          <div className="chat-log-list pixel-scroll" ref={chatLogListRef}>
+            {!inRoom ? (
+              <p className="chat-log-empty">방에 들어가면 여기에 쌓여요</p>
+            ) : logLines.length === 0 ? (
+              <p className="chat-log-empty">최근 10분 채팅이 없어요</p>
+            ) : (
+              logLines.map((m) => (
+                <p key={m.id} className="chat-log-line">
+                  <strong>{m.nickname}</strong>
+                  <span>{m.text}</span>
+                </p>
+              ))
+            )}
+          </div>
+        </aside>
+      ) : null}
       {activeLetter && (
         <LetterReveal
           letter={activeLetter}
@@ -2086,6 +2327,38 @@ export function OverlayApp() {
                 위치 고정하기: 화면 어디든 드래그 후 확인.
                 고정 해제하기: 다시 테두리 자동 이동으로 돌아갑니다.
               </p>
+              <label className="move-switch">
+                <span>채팅 기록</span>
+                <input
+                  type="checkbox"
+                  checked={chatLog.enabled}
+                  onChange={(e) => {
+                    const next = { ...chatLog, enabled: e.target.checked };
+                    setChatLog(next);
+                    writeChatLogSettings(next);
+                  }}
+                />
+                <span className="switch-ui" aria-hidden />
+              </label>
+              <p className="move-hint">왼쪽 하단에서 시작합니다. 제목을 끌면 옮기고, 오른쪽 가장자리로 가로를 조절합니다.</p>
+              <div className="move-row">
+                <span>투명도</span>
+                <input
+                  type="range"
+                  min={25}
+                  max={95}
+                  value={Math.round(chatLog.opacity * 100)}
+                  disabled={!chatLog.enabled}
+                  onChange={(e) => {
+                    const next = {
+                      ...chatLog,
+                      opacity: Number(e.target.value) / 100,
+                    };
+                    setChatLog(next);
+                    writeChatLogSettings(next);
+                  }}
+                />
+              </div>
             </div>
           )}
           {bombCmdTip && (
