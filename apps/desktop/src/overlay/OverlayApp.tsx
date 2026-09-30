@@ -487,40 +487,6 @@ export function OverlayApp() {
     return () => window.clearTimeout(t);
   }, [bomb?.endsAt, bomb?.holderMemberId, bomb?.holderNickname, bombExplode]);
 
-  // 폭발: 당사자만 전체 연출, 나머지는 말풍선·알림만
-  useEffect(() => {
-    if (!bombExplode) return;
-    const nick = bombExplode.holderNickname || "누군가";
-    const victimId = bombExplode.holderMemberId;
-    const isVictim = Boolean(selfMemberId && selfMemberId === victimId);
-
-    setBubbles((prev) => [
-      ...prev.filter((b) => b.until > Date.now() && b.memberId !== victimId),
-      {
-        memberId: victimId,
-        text: isVictim ? "💥 터졌다!" : `💥 ${nick} 터짐!`,
-        until: Date.now() + Math.max(BUBBLE_TTL_MS, 3200),
-        id: `bomb-boom-${bombExplode.at}`,
-      },
-    ]);
-    if (!isVictim) {
-      writeOverlayNotice(`${nick}님의 폭탄이 터졌어요!`);
-    }
-
-    // 비당사자는 BombBoom 없이 상태만 짧게 유지 후 정리
-    if (isVictim) return;
-    const t = window.setTimeout(() => {
-      playedExplodeAtRef.current = bombExplode.at;
-      setBombExplode(null);
-    }, 2800);
-    return () => window.clearTimeout(t);
-  }, [
-    bombExplode?.at,
-    bombExplode?.holderMemberId,
-    bombExplode?.holderNickname,
-    selfMemberId,
-  ]);
-
   useEffect(() => {
     if (!guide.activeForWindow || !guide.session) return;
     const step = guide.session.step;
@@ -1581,6 +1547,41 @@ export function OverlayApp() {
     const rt = readRuntime();
     return rt?.memberId && rt.memberId !== "local" ? rt.memberId : null;
   })();
+
+  // 폭발: 당사자만 전체 연출, 나머지는 말풍선·알림만
+  // selfMemberId 선언 이후에 둬야 렌더 중 TDZ로 오버레이가 죽지 않음
+  useEffect(() => {
+    if (!bombExplode) return;
+    const nick = bombExplode.holderNickname || "누군가";
+    const victimId = bombExplode.holderMemberId;
+    const isVictim = Boolean(selfMemberId && selfMemberId === victimId);
+
+    setBubbles((prev) => [
+      ...prev.filter((b) => b.until > Date.now() && b.memberId !== victimId),
+      {
+        memberId: victimId,
+        text: isVictim ? "💥 터졌다!" : `💥 ${nick} 터짐!`,
+        until: Date.now() + Math.max(BUBBLE_TTL_MS, 3200),
+        id: `bomb-boom-${bombExplode.at}`,
+      },
+    ]);
+    if (!isVictim) {
+      writeOverlayNotice(`${nick}님의 폭탄이 터졌어요!`);
+    }
+
+    if (isVictim) return;
+    const t = window.setTimeout(() => {
+      playedExplodeAtRef.current = bombExplode.at;
+      setBombExplode(null);
+    }, 2800);
+    return () => window.clearTimeout(t);
+  }, [
+    bombExplode?.at,
+    bombExplode?.holderMemberId,
+    bombExplode?.holderNickname,
+    selfMemberId,
+  ]);
+
   const bombIsHolder = Boolean(
     bomb && selfMemberId && bomb.holderMemberId === selfMemberId,
   );
