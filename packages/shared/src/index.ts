@@ -1,6 +1,6 @@
 export const MAX_ROOM_MEMBERS = 8;
 export const MAX_CHAT_LENGTH = 80;
-export const BUBBLE_TTL_MS = 2000;
+export const BUBBLE_TTL_MS = 4000;
 export const INVITE_CODE_LENGTH = 6;
 export const FRIEND_CODE_LENGTH = 6;
 export const PNG_MAX_BYTES = 128 * 1024;
