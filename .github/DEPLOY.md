@@ -5,6 +5,25 @@
 
 ---
 
+## v0.1.34 — macOS DMG 사이드로드
+
+**배포일:** 2026-09-30  
+**대상:** 데스크톱 (Windows + macOS)
+
+### 변경
+- GitHub Releases에 **유니버설 macOS DMG** 추가 (App Store 아님, 미서명)
+- Windows NSIS와 병렬 빌드
+
+### 설치 (macOS)
+- `MoniBuddy_*_*.dmg` 다운로드 → Applications로 복사
+- 첫 실행 경고 시 **우클릭 → 열기** 또는 `xattr -cr /Applications/MoniBuddy.app`
+
+### 배포 체크
+- [ ] Release desktop Windows NSIS 성공
+- [ ] Release desktop macOS DMG 성공
+
+---
+
 ## v0.1.33 — 프로필 빈 화면(UpdateBanner import)
 
 **이슈:** [#59](https://github.com/aaahyesu/MoniBuddy/issues/59) 후속  
