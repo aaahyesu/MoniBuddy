@@ -1588,21 +1588,31 @@
   padding: 24px 16px;
 }
 .ladder-board {
-  display: grid;
-  gap: 4px;
+  display: flex;
+  justify-content: center;
   margin: 0;
   padding: 0;
   background: transparent;
   border: none;
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-height: 0;
+  width: 100%;
+}
+.ladder-stage {
+  display: grid;
+  gap: 6px;
+  width: min(
+    100%,
+    calc(min(36vh, 240px) * var(--vb-w, 2) / var(--vb-h, 4))
+  );
 }
 .ladder-tops,
 .ladder-bottoms {
   display: grid;
   grid-template-columns: repeat(var(--cols, 2), minmax(0, 1fr));
-  gap: 2px;
+  gap: 0;
   align-items: end;
+  width: 100%;
 }
 .ladder-top {
   display: grid;
@@ -1664,22 +1674,27 @@
 .ladder-svg-wrap {
   position: relative;
   width: 100%;
+  aspect-ratio: var(--vb-w, 2) / var(--vb-h, 4);
+  margin: 0;
   padding: 0;
-  max-height: min(32vh, 200px);
 }
 .ladder-svg {
+  position: absolute;
+  inset: 0;
   width: 100%;
-  height: auto;
-  max-height: min(32vh, 200px);
+  height: 100%;
   display: block;
   overflow: visible;
 }
 .ladder-rail,
 .ladder-rung {
-  stroke: #6a7384;
-  stroke-width: 1;
-  stroke-linecap: butt;
+  stroke: #9aa3b2;
+  stroke-width: 2.5;
+  stroke-linecap: round;
   vector-effect: non-scaling-stroke;
+}
+.ladder-rung {
+  stroke: #c5ccd8;
 }
 .ladder-traveler {
   position: absolute;

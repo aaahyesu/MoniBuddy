@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { LadderState, Member } from "@monibuddy/shared";
 import { CharacterView } from "../components/CharacterView";
 
@@ -18,18 +18,21 @@ type Props = {
 
 type Pt = { x: number; y: number };
 
-const CELL_W = 48;
-const CELL_H = 14;
-const PAD_X = 24;
-const PAD_Y = 4;
+/** 열 간격(유닛). 레일 x = (col + 0.5) 로 CSS 그리드 중앙과 일치 */
+const COL_W = 1;
+const CELL_H = 1;
 /** 경로 이동 속도 (viewBox 단위 / ms) */
-const SPEED = 0.07;
+const SPEED = 0.0045;
 
 function outcomeKind(text: string): "win" | "lose" | "custom" {
   const t = text.trim();
   if (/^(당첨|선물|win|gift)$/i.test(t)) return "win";
   if (/^(꽝|폭탄|lose|bomb)$/i.test(t)) return "lose";
   return "custom";
+}
+
+function railX(col: number): number {
+  return (col + 0.5) * COL_W;
 }
 
 /** 세로↓ → 가로→ → 세로↓ 연속 좌표 */
@@ -40,20 +43,20 @@ function buildWaypoints(
 ): Pt[] {
   const pts: Pt[] = [];
   let col = startCol;
-  pts.push({ x: PAD_X + col * CELL_W, y: PAD_Y });
+  pts.push({ x: railX(col), y: 0 });
   for (let ri = 0; ri < rungs.length; ri++) {
     const row = rungs[ri]!;
-    const yMid = PAD_Y + (ri + 0.5) * CELL_H;
-    const yBot = PAD_Y + (ri + 1) * CELL_H;
-    pts.push({ x: PAD_X + col * CELL_W, y: yMid });
+    const yMid = (ri + 0.5) * CELL_H;
+    const yBot = (ri + 1) * CELL_H;
+    pts.push({ x: railX(col), y: yMid });
     let next = col;
     if (col > 0 && row[col - 1]) next = col - 1;
     else if (col < columns - 1 && row[col]) next = col + 1;
     if (next !== col) {
-      pts.push({ x: PAD_X + next * CELL_W, y: yMid });
+      pts.push({ x: railX(next), y: yMid });
       col = next;
     }
-    pts.push({ x: PAD_X + col * CELL_W, y: yBot });
+    pts.push({ x: railX(col), y: yBot });
   }
   return pts;
 }
@@ -337,9 +340,9 @@ export function LadderGame({
 
   if (ladder.phase === "running" || ladder.phase === "done") {
     const cols = Math.max(ladder.names.length, 1);
-    const rows = ladder.rungs.length;
-    const vbW = cols * CELL_W;
-    const vbH = PAD_Y * 2 + rows * CELL_H;
+    const rows = Math.max(ladder.rungs.length, 1);
+    const vbW = cols * COL_W;
+    const vbH = rows * CELL_H;
     vbRef.current = { w: vbW, h: vbH };
     const movingMember =
       animPlayer >= 0
@@ -357,101 +360,109 @@ export function LadderGame({
 
         <div
           className="ladder-board"
-          style={{ ["--cols" as string]: String(cols) }}
+          style={
+            {
+              ["--cols" as string]: String(cols),
+              ["--vb-w" as string]: String(vbW),
+              ["--vb-h" as string]: String(vbH),
+            } as CSSProperties
+          }
         >
-          <div className="ladder-tops">
-            {ladder.names.map((n, i) => {
-              const m = memberById.get(ladder.memberIds[i] ?? "");
-              const hiding = traveling && animPlayer === i;
-              return (
-                <div
-                  key={`t-${ladder.memberIds[i] ?? n}-${i}`}
-                  className={`ladder-top${animPlayer === i ? " active" : ""}${hiding ? " traveling" : ""}`}
-                >
-                  <span className="ladder-num">{i + 1}</span>
-                  <div className="ladder-avatar">
-                    {m ? (
-                      <CharacterView
-                        character={m.character}
-                        serverUrl={serverUrl}
-                        size={26}
-                        fixedSize
-                      />
-                    ) : (
-                      <span className="ladder-avatar-fallback">
-                        {n.slice(0, 1)}
-                      </span>
-                    )}
+          <div className="ladder-stage">
+            <div className="ladder-tops">
+              {ladder.names.map((n, i) => {
+                const m = memberById.get(ladder.memberIds[i] ?? "");
+                const hiding = traveling && animPlayer === i;
+                return (
+                  <div
+                    key={`t-${ladder.memberIds[i] ?? n}-${i}`}
+                    className={`ladder-top${animPlayer === i ? " active" : ""}${hiding ? " traveling" : ""}`}
+                  >
+                    <span className="ladder-num">{i + 1}</span>
+                    <div className="ladder-avatar">
+                      {m ? (
+                        <CharacterView
+                          character={m.character}
+                          serverUrl={serverUrl}
+                          size={26}
+                          fixedSize
+                        />
+                      ) : (
+                        <span className="ladder-avatar-fallback">
+                          {n.slice(0, 1)}
+                        </span>
+                      )}
+                    </div>
+                    <span className="ladder-nick">{n}</span>
                   </div>
-                  <span className="ladder-nick">{n}</span>
-                </div>
-              );
-            })}
-          </div>
-
-          <div className="ladder-svg-wrap">
-            <svg
-              className="ladder-svg"
-              viewBox={`0 0 ${vbW} ${vbH}`}
-              preserveAspectRatio="xMidYMid meet"
-            >
-              {Array.from({ length: cols }, (_, c) => (
-                <line
-                  key={`v-${c}`}
-                  x1={PAD_X + c * CELL_W}
-                  y1={PAD_Y}
-                  x2={PAD_X + c * CELL_W}
-                  y2={PAD_Y + rows * CELL_H}
-                  className="ladder-rail"
-                />
-              ))}
-              {ladder.rungs.map((row, ri) =>
-                row.map((on, gi) =>
-                  on ? (
-                    <line
-                      key={`h-${ri}-${gi}`}
-                      x1={PAD_X + gi * CELL_W}
-                      y1={PAD_Y + (ri + 0.5) * CELL_H}
-                      x2={PAD_X + (gi + 1) * CELL_W}
-                      y2={PAD_Y + (ri + 0.5) * CELL_H}
-                      className="ladder-rung"
-                    />
-                  ) : null,
-                ),
-              )}
-            </svg>
-            <div
-              ref={travelerElRef}
-              className={`ladder-traveler${movingMember ? "" : " dot"}`}
-              style={{ opacity: 0 }}
-            >
-              {movingMember ? (
-                <CharacterView
-                  character={movingMember.character}
-                  serverUrl={serverUrl}
-                  size={22}
-                  fixedSize
-                />
-              ) : null}
+                );
+              })}
             </div>
-          </div>
 
-          <div className="ladder-bottoms">
-            {ladder.outcomes.map((o, i) => {
-              const kind = outcomeKind(o);
-              const show =
-                ladder.phase === "done" || revealedEnds.includes(i);
-              return (
-                <div
-                  key={`o-${i}`}
-                  className={`ladder-outcome ${kind}${show ? " show" : ""}`}
-                >
-                  <span className="ladder-outcome-text">
-                    {show ? o : "·"}
-                  </span>
-                </div>
-              );
-            })}
+            <div className="ladder-svg-wrap">
+              <svg
+                className="ladder-svg"
+                viewBox={`0 0 ${vbW} ${vbH}`}
+                preserveAspectRatio="none"
+              >
+                {Array.from({ length: cols }, (_, c) => (
+                  <line
+                    key={`v-${c}`}
+                    x1={railX(c)}
+                    y1={0}
+                    x2={railX(c)}
+                    y2={vbH}
+                    className="ladder-rail"
+                  />
+                ))}
+                {ladder.rungs.map((row, ri) =>
+                  row.map((on, gi) =>
+                    on ? (
+                      <line
+                        key={`h-${ri}-${gi}`}
+                        x1={railX(gi)}
+                        y1={(ri + 0.5) * CELL_H}
+                        x2={railX(gi + 1)}
+                        y2={(ri + 0.5) * CELL_H}
+                        className="ladder-rung"
+                      />
+                    ) : null,
+                  ),
+                )}
+              </svg>
+              <div
+                ref={travelerElRef}
+                className={`ladder-traveler${movingMember ? "" : " dot"}`}
+                style={{ opacity: 0 }}
+              >
+                {movingMember ? (
+                  <CharacterView
+                    character={movingMember.character}
+                    serverUrl={serverUrl}
+                    size={22}
+                    fixedSize
+                  />
+                ) : null}
+              </div>
+            </div>
+
+            <div className="ladder-bottoms">
+              {ladder.outcomes.map((o, i) => {
+                const kind = outcomeKind(o);
+                const show =
+                  ladder.phase === "done" || revealedEnds.includes(i);
+                return (
+                  <div
+                    key={`o-${i}`}
+                    className={`ladder-outcome ${kind}${show ? " show" : ""}`}
+                  >
+                    <span className="ladder-outcome-text">
+                      {show ? o : "·"}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
 
