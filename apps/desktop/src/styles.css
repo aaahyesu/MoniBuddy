@@ -1351,14 +1351,19 @@
 }
 .bomb-prop-actions {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-start;
   gap: 3px;
-  max-width: 140px;
+  max-width: min(92vw, 480px);
+  overflow-x: auto;
+  overflow-y: hidden;
   padding: 4px;
   background: rgba(28, 36, 48, 0.92);
   border: 2px solid #1c2430;
   box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.35);
+  scrollbar-width: thin;
 }
 .bomb-prop-actions > button {
   appearance: none;
@@ -1370,6 +1375,14 @@
   padding: 3px 6px;
   cursor: pointer;
   box-shadow: 1px 1px 0 #1c2430;
+  flex: 0 0 auto;
+  white-space: nowrap;
+  max-width: 9em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bomb-prop-actions > button.bomb-pass-random {
+  background: #ffe14d;
 }
 .bomb-prop-actions > button:active {
   transform: translate(1px, 1px);
@@ -1588,21 +1601,31 @@
   padding: 24px 16px;
 }
 .ladder-board {
-  display: grid;
-  gap: 4px;
+  display: flex;
+  justify-content: center;
   margin: 0;
   padding: 0;
   background: transparent;
   border: none;
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-height: 0;
+  width: 100%;
+}
+.ladder-stage {
+  display: grid;
+  gap: 6px;
+  width: min(
+    100%,
+    calc(min(36vh, 240px) * var(--vb-w, 2) / var(--vb-h, 4))
+  );
 }
 .ladder-tops,
 .ladder-bottoms {
   display: grid;
   grid-template-columns: repeat(var(--cols, 2), minmax(0, 1fr));
-  gap: 2px;
+  gap: 0;
   align-items: end;
+  width: 100%;
 }
 .ladder-top {
   display: grid;
@@ -1664,22 +1687,36 @@
 .ladder-svg-wrap {
   position: relative;
   width: 100%;
+  aspect-ratio: var(--vb-w, 2) / var(--vb-h, 4);
+  margin: 0;
   padding: 0;
-  max-height: min(32vh, 200px);
 }
 .ladder-svg {
+  position: absolute;
+  inset: 0;
   width: 100%;
-  height: auto;
-  max-height: min(32vh, 200px);
+  height: 100%;
   display: block;
   overflow: visible;
 }
 .ladder-rail,
 .ladder-rung {
-  stroke: #6a7384;
-  stroke-width: 1;
+  stroke: #d7dde8;
+  stroke-width: 0.12;
   stroke-linecap: butt;
-  vector-effect: non-scaling-stroke;
+}
+.ladder-rung {
+  stroke: #f2f5fa;
+  stroke-width: 0.14;
+}
+.ladder-trace {
+  fill: none;
+  stroke: #55ddff;
+  stroke-width: 0.1;
+  stroke-linecap: square;
+  stroke-linejoin: miter;
+  opacity: 0.95;
+  pointer-events: none;
 }
 .ladder-traveler {
   position: absolute;

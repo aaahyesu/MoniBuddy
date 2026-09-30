@@ -309,27 +309,70 @@ export type LadderAck =
   | { ok: true; ladder: LadderState }
   | { ok: false; error: string };
 
+/** rungs[row][gap] = true → gap와 gap+1 열을 가로로 연결.
+ *  columns>=2 이면 가로줄 합계 최소 5개(가능하면)를 보장. */
 export function generateLadderRungs(
   columns: number,
   rows = 10,
 ): boolean[][] {
   const n = Math.max(1, columns);
+  const gaps = Math.max(0, n - 1);
+  const rowCount = Math.max(1, rows);
   const rungs: boolean[][] = [];
-  for (let row = 0; row < rows; row++) {
-    const line: boolean[] = [];
+
+  const canPlace = (line: boolean[], gap: number) => {
+    if (gap < 0 || gap >= line.length) return false;
+    if (line[gap]) return false;
+    if (gap > 0 && line[gap - 1]) return false;
+    if (gap < line.length - 1 && line[gap + 1]) return false;
+    return true;
+  };
+
+  for (let row = 0; row < rowCount; row++) {
+    const line: boolean[] = Array.from({ length: gaps }, () => false);
+    if (gaps === 0) {
+      rungs.push(line);
+      continue;
+    }
     let skipNext = false;
-    for (let gap = 0; gap < n - 1; gap++) {
+    for (let gap = 0; gap < gaps; gap++) {
       if (skipNext) {
-        line.push(false);
         skipNext = false;
         continue;
       }
-      const put = Math.random() < 0.45;
-      line.push(put);
-      if (put) skipNext = true;
+      if (Math.random() < 0.72) {
+        line[gap] = true;
+        skipNext = true;
+      }
     }
     rungs.push(line);
   }
+
+  if (gaps === 0) return rungs;
+
+  const countRungs = () =>
+    rungs.reduce((n, line) => n + line.filter(Boolean).length, 0);
+
+  // 최소 5개 가로줄 (행·간격이 부족하면 가능한 최대)
+  const minRungs = Math.min(5, gaps * rowCount);
+  let guard = 0;
+  while (countRungs() < minRungs && guard++ < 200) {
+    const ri = Math.floor(Math.random() * rowCount);
+    const gi = Math.floor(Math.random() * gaps);
+    const line = rungs[ri]!;
+    if (!canPlace(line, gi)) continue;
+    line[gi] = true;
+  }
+
+  // 그래도 모자라면 위에서부터 강제 배치
+  if (countRungs() < minRungs) {
+    for (let ri = 0; ri < rowCount && countRungs() < minRungs; ri++) {
+      for (let gi = 0; gi < gaps && countRungs() < minRungs; gi++) {
+        if (canPlace(rungs[ri]!, gi)) rungs[ri]![gi] = true;
+      }
+    }
+  }
+
   return rungs;
 }
 
