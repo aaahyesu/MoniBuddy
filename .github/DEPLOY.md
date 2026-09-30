@@ -5,6 +5,16 @@
 
 ---
 
+## (준비) macOS DMG 사이드로드
+
+**대상:** 데스크톱 릴리스 파이프라인  
+**내용:** App Store 없이 GitHub Releases에 **유니버설 DMG** 업로드  
+- `Release desktop` 매트릭스에 `macos-latest` + `--bundles dmg --target universal-apple-darwin`
+- Apple 코드서명/공증 없음 → 첫 실행 시 **우클릭 → 열기**
+- 다음 버전 태그/릴리스부터 `.dmg` 에셋이 exe와 함께 올라감
+
+---
+
 ## v0.1.33 — 프로필 빈 화면(UpdateBanner import)
 
 **이슈:** [#59](https://github.com/aaahyesu/MoniBuddy/issues/59) 후속  

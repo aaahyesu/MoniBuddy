@@ -10,9 +10,22 @@ permissions:
   contents: write
 
 jobs:
-  publish-windows:
-    name: Build Windows installer + GitHub Release
-    runs-on: windows-latest
+  publish-tauri:
+    name: Build ${{ matrix.label }}
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+            label: Windows NSIS
+            args: "--bundles nsis"
+          # App Store 아님 — GitHub Releases용 미서명 DMG (Intel + Apple Silicon)
+          - platform: macos-latest
+            label: macOS DMG
+            args: "--bundles dmg --target universal-apple-darwin"
+    runs-on: ${{ matrix.platform }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -25,6 +38,10 @@ jobs:
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Add Apple universal targets
+        if: runner.os == 'macOS'
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
@@ -45,15 +62,26 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           # 키 생성 시 비밀번호 없음 — 시크릿에 잘못 넣은 값이 있어도 빈 문자열 사용
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+          # Apple 코드서명 없음 (사이드로드 DMG)
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
         with:
           projectPath: apps/desktop
+          args: ${{ matrix.args }}
           tagName: v__VERSION__
           releaseName: MoniBuddy v__VERSION__
           releaseBody: |
-            ## MoniBuddy Windows 설치본
+            ## MoniBuddy 설치본
 
+            ### Windows
             - `MoniBuddy_*_x64-setup.exe` 를 받아 설치하세요.
             - 이미 설치되어 있으면 앱이 자동으로 업데이트를 확인합니다.
+
+            ### macOS (App Store 아님)
+            - `MoniBuddy_*_*.dmg` 를 받아 설치하세요. (Intel + Apple Silicon 유니버설)
+            - 처음 실행 시 “확인되지 않은 개발자” 경고가 나면 **우클릭 → 열기**로 실행하세요.
+            - 또는 터미널: `xattr -cr /Applications/MoniBuddy.app`
+
+            ### 서버
             - 기본 서버: https://monibuddy-server.onrender.com (또는 repo Variable `MONIBUDDY_SERVER_URL`)
             - 로컬 서버를 쓰려면 앱에서 서버 URL을 `http://127.0.0.1:3847` 로 바꾸면 됩니다.
           releaseDraft: false

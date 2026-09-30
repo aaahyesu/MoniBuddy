@@ -27,9 +27,12 @@
 
 배포 시 증상·원인·수정·검증은 **[DEPLOY.md](./DEPLOY.md)** 에 버전별로 기록합니다.
 
-### 데스크톱 설치본 (exe)
-- `main`에 push 되면 `Release desktop` 워크플로가 Windows NSIS 설치본을 빌드하고 GitHub Releases에 올립니다.
-- Releases 탭에서 `MoniBuddy_*_x64-setup.exe` 다운로드
+### 데스크톱 설치본
+- `main`에 push 되면 `Release desktop` 워크플로가 **Windows NSIS(`.exe`)** 와 **macOS DMG** 를 빌드해 GitHub Releases에 올립니다.
+- Releases 탭에서
+  - Windows: `MoniBuddy_*_x64-setup.exe`
+  - macOS: `MoniBuddy_*_*.dmg` (유니버설, App Store 아님)
+- macOS 첫 실행 시 Gatekeeper 경고 → **우클릭 → 열기** (또는 `xattr -cr /Applications/MoniBuddy.app`)
 
 ### 서버 (Render)
 - `main`에 server/shared 관련 변경이 push되면 Deploy workflow가 실행됨
