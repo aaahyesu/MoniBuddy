@@ -514,7 +514,12 @@ export function OverlayApp() {
       setBombExplode(null);
     }, 2800);
     return () => window.clearTimeout(t);
-  }, [bombExplode?.at, bombExplode?.holderMemberId, selfMemberId]);
+  }, [
+    bombExplode?.at,
+    bombExplode?.holderMemberId,
+    bombExplode?.holderNickname,
+    selfMemberId,
+  ]);
 
   useEffect(() => {
     if (!guide.activeForWindow || !guide.session) return;
