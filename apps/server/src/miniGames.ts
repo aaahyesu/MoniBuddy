@@ -234,7 +234,8 @@ export function attachMiniGames(
     }
     // 결과 칸은 항상 섞음 — 누가 무엇을 받을지는 사다리+셔플로만 결정
     shuffleInPlace(outcomes);
-    const rowCount = Math.min(12, Math.max(7, n * 2));
+    // 행을 넉넉히 — 가로줄 최소 5개 확보에 유리
+    const rowCount = Math.min(14, Math.max(8, n * 2 + 2));
     const rungs = generateLadderRungs(n, rowCount);
     const ends = resolveLadderPaths(n, rungs);
     const results = participants.map((p, startCol) => ({
@@ -253,7 +254,7 @@ export function attachMiniGames(
     room.ladder = ladder;
     io.to(code).emit(SocketEvents.LadderSync, ladder);
     // 클라이언트 경로 연출 시간과 맞춤 (행↑·가로 이동 포함)
-    const animMs = n * (rowCount * 280 + 700) + 1400;
+    const animMs = n * (rowCount * 360 + 900) + 1600;
     setTimeout(() => {
       const r = rooms.get(code);
       if (!r?.ladder || r.ladder.phase !== "running") return;

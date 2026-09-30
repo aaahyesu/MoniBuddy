@@ -21,8 +21,8 @@ type Pt = { x: number; y: number };
 /** 열 간격(유닛). 레일 x = (col + 0.5) 로 CSS 그리드 중앙과 일치 */
 const COL_W = 1;
 const CELL_H = 1;
-/** 경로 이동 속도 (viewBox 단위 / ms) */
-const SPEED = 0.0045;
+/** 경로 이동 속도 (viewBox 단위 / ms) — 가로 이동이 눈에 띄게 */
+const SPEED = 0.0032;
 
 function outcomeKind(text: string): "win" | "lose" | "custom" {
   const t = text.trim();
@@ -97,6 +97,10 @@ function endColOf(startCol: number, columns: number, rungs: boolean[][]): number
   return col;
 }
 
+function ptsToPolyline(pts: Pt[]): string {
+  return pts.map((p) => `${p.x},${p.y}`).join(" ");
+}
+
 export function LadderGame({
   ladder,
   members,
@@ -113,8 +117,11 @@ export function LadderGame({
   const [animPlayer, setAnimPlayer] = useState(-1);
   const [revealedEnds, setRevealedEnds] = useState<number[]>([]);
   const [traveling, setTraveling] = useState(false);
+  const [tracePts, setTracePts] = useState<Pt[]>([]);
   const animGenRef = useRef(0);
   const travelerElRef = useRef<HTMLDivElement | null>(null);
+  const svgRef = useRef<SVGSVGElement | null>(null);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
   const vbRef = useRef({ w: 1, h: 1 });
 
   // sync 폴링이 rungs 참조를 바꿔도 연출이 리셋되지 않게 고정 키
@@ -139,7 +146,7 @@ export function LadderGame({
     if (ladder.phase !== "running" || !runKey) return;
     const cols = ladder.names.length;
     if (cols === 0) return;
-    const rungs = ladder.rungs;
+    const rungs = ladder.rungs.map((row) => row.map((v) => Boolean(v)));
     const gen = ++animGenRef.current;
     let raf = 0;
     let player = 0;
@@ -148,22 +155,30 @@ export function LadderGame({
     let last = performance.now();
     let pauseUntil = 0;
 
+    /** SVG viewBox 좌표 → wrap 기준 px (레일·가로줄과 동일 투영) */
     const place = (pt: Pt | null) => {
       const el = travelerElRef.current;
+      const svg = svgRef.current;
+      const wrap = wrapRef.current;
       if (!el) return;
-      if (!pt) {
+      if (!pt || !svg || !wrap) {
         el.style.opacity = "0";
         return;
       }
       const { w, h } = vbRef.current;
+      const s = svg.getBoundingClientRect();
+      const box = wrap.getBoundingClientRect();
+      const x = s.left - box.left + (pt.x / w) * s.width;
+      const y = s.top - box.top + (pt.y / h) * s.height;
       el.style.opacity = "1";
-      el.style.left = `${(pt.x / w) * 100}%`;
-      el.style.top = `${(pt.y / h) * 100}%`;
+      el.style.left = `${x}px`;
+      el.style.top = `${y}px`;
     };
 
     setAnimPlayer(0);
     setRevealedEnds([]);
     setTraveling(true);
+    setTracePts(pts);
     place(pts[0] ?? null);
 
     const tick = (now: number) => {
@@ -188,13 +203,15 @@ export function LadderGame({
         if (player >= cols) {
           setAnimPlayer(-1);
           setTraveling(false);
+          setTracePts([]);
           place(null);
           return;
         }
         setAnimPlayer(player);
         pts = buildWaypoints(player, cols, rungs);
+        setTracePts(pts);
         dist = 0;
-        pauseUntil = now + 220;
+        pauseUntil = now + 280;
         place(pts[0] ?? null);
         raf = requestAnimationFrame(tick);
         return;
@@ -399,8 +416,9 @@ export function LadderGame({
               })}
             </div>
 
-            <div className="ladder-svg-wrap">
+            <div className="ladder-svg-wrap" ref={wrapRef}>
               <svg
+                ref={svgRef}
                 className="ladder-svg"
                 viewBox={`0 0 ${vbW} ${vbH}`}
                 preserveAspectRatio="none"
@@ -429,6 +447,12 @@ export function LadderGame({
                     ) : null,
                   ),
                 )}
+                {tracePts.length > 1 ? (
+                  <polyline
+                    points={ptsToPolyline(tracePts)}
+                    className="ladder-trace"
+                  />
+                ) : null}
               </svg>
               <div
                 ref={travelerElRef}

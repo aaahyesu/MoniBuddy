@@ -1709,6 +1709,15 @@
   stroke: #f2f5fa;
   stroke-width: 0.14;
 }
+.ladder-trace {
+  fill: none;
+  stroke: #55ddff;
+  stroke-width: 0.1;
+  stroke-linecap: square;
+  stroke-linejoin: miter;
+  opacity: 0.95;
+  pointer-events: none;
+}
 .ladder-traveler {
   position: absolute;
   width: 22px;
