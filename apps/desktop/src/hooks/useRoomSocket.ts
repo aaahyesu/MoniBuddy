@@ -215,8 +215,9 @@ export function useRoomSocket(opts: Options) {
         forceBase64: forcePolling,
         autoConnect: true,
         reconnection: true,
-        reconnectionAttempts: 12,
-        reconnectionDelay: 1500,
+        reconnectionAttempts: 30,
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 5000,
         timeout: 45000,
       });
       socketRef.current = socket;

@@ -35,8 +35,10 @@
 - macOS 첫 실행 시 Gatekeeper 경고 → **우클릭 → 열기** (또는 `xattr -cr /Applications/MoniBuddy.app`)
 
 ### 서버 (Render)
-- `main`에 server/shared 관련 변경이 push되면 Deploy workflow가 실행됨
-- Render Deploy Hook URL을 repo Secret `RENDER_DEPLOY_HOOK`에 등록
+- 자동 배포는 `render.yaml`의 `buildFilter` 기준. `apps/server`, `packages/shared`, 루트 `package.json`/`package-lock.json`, `render.yaml`이 바뀔 때만 서버가 재시작됨
+- 데스크톱만 바뀐 푸시는 서버를 재시작하지 않음
+- 방과 멤버는 Turso에 저장되어, 서버가 다시 떠도 같은 코드로 재입장할 수 있음
+- GitHub Actions의 `RENDER_DEPLOY_HOOK`이 비어 있으면 훅은 호출하지 않음. 재시작은 Render에 연결된 저장소 자동 배포가 담당
 - Blueprint: 저장소 루트 `render.yaml` (서비스명 `monibuddy-server`)
 - 공용 URL 예: `https://monibuddy-server.onrender.com`
 - 설치본 기본 서버 URL은 repo Variable `MONIBUDDY_SERVER_URL`로 덮어쓸 수 있음

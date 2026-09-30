@@ -13,6 +13,16 @@ services:
     buildCommand: npm install && npm run build:shared && npm run build -w @monibuddy/server
     startCommand: npm run start -w @monibuddy/server
     healthCheckPath: /health
+    # 데스크톱만 바뀐 푸시로는 서버를 재시작하지 않음.
+    # paths 에 없는 파일만 바뀌면 자동 배포를 건너뛴다.
+    autoDeployTrigger: commit
+    buildFilter:
+      paths:
+        - apps/server/**
+        - packages/shared/**
+        - package.json
+        - package-lock.json
+        - render.yaml
     envVars:
       - key: NODE_VERSION
         value: "20"

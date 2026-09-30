@@ -51,6 +51,7 @@ import {
 import { mountDesktopUpdaterProxy } from "./desktopUpdater";
 import { FriendStore } from "./friendStore";
 import { attachMiniGames, type GameRoom } from "./miniGames";
+import { RoomStore } from "./roomStore";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const UPLOAD_DIR = path.resolve(__dirname, "../uploads");
@@ -59,6 +60,7 @@ const PORT = Number(process.env.PORT ?? 3847);
 
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 const friends = await FriendStore.create(DATA_DIR);
+const roomStore = await RoomStore.create(DATA_DIR);
 
 function sanitizeStatusMessage(raw: unknown): string {
   return String(raw ?? "")
@@ -74,12 +76,41 @@ const socketRoom = new Map<string, string>();
 const EMPTY_ROOM_GRACE_MS = 45_000;
 /** 소켓 끊김 시 멤버를 즉시 제거하지 않고 유지 — 방장 퇴장 레이스 방지 */
 const MEMBER_DISCONNECT_GRACE_MS = 45_000;
+/** 재시작으로 복원한 멤버. 배포 전환 동안 재접속할 시간을 둠 */
+const RESTORE_MEMBER_GRACE_MS = 3 * 60_000;
 const emptyRoomTimers = new Map<string, ReturnType<typeof setTimeout>>();
 /** key = `${roomCode}:${memberId}` */
 const pendingMemberRemovals = new Map<string, ReturnType<typeof setTimeout>>();
 
 function memberRemovalKey(code: string, memberId: string) {
   return `${code}:${memberId}`;
+}
+
+const persistTail = new Map<string, Promise<void>>();
+
+function enqueuePersist(code: string, job: () => Promise<void>): Promise<void> {
+  const prev = persistTail.get(code) ?? Promise.resolve();
+  const result = prev.then(job);
+  persistTail.set(
+    code,
+    result.catch((err) => {
+      console.error(`[rooms] persist ${code} failed`, err);
+    }),
+  );
+  return result;
+}
+
+function snapshotMembers(room: Room): Member[] {
+  return JSON.parse(JSON.stringify([...room.members.values()])) as Member[];
+}
+
+function persistRoom(room: Room): Promise<void> {
+  const members = snapshotMembers(room);
+  return enqueuePersist(room.code, () => roomStore.saveRoom(room.code, members));
+}
+
+function persistDelete(code: string): Promise<void> {
+  return enqueuePersist(code, () => roomStore.deleteRoom(code));
 }
 
 function cancelEmptyRoomTimer(code: string) {
@@ -116,7 +147,11 @@ function memberHasSocket(room: Room, memberId: string): boolean {
   return false;
 }
 
-function scheduleMemberRemoval(code: string, memberId: string) {
+function scheduleMemberRemoval(
+  code: string,
+  memberId: string,
+  delayMs = MEMBER_DISCONNECT_GRACE_MS,
+) {
   cancelPendingMemberRemoval(code, memberId);
   const key = memberRemovalKey(code, memberId);
   const timer = setTimeout(() => {
@@ -128,8 +163,10 @@ function scheduleMemberRemoval(code: string, memberId: string) {
     room.members.delete(memberId);
     if (room.members.size === 0) {
       scheduleEmptyRoomExpiry(code);
+      void persistDelete(code);
       return;
     }
+    void persistRoom(room);
     if (member) {
       io.to(code).emit(SocketEvents.RoomNotice, {
         type: "member-leave",
@@ -139,7 +176,7 @@ function scheduleMemberRemoval(code: string, memberId: string) {
       });
     }
     broadcastSync(room);
-  }, MEMBER_DISCONNECT_GRACE_MS);
+  }, delayMs);
   pendingMemberRemovals.set(key, timer);
 }
 
@@ -253,8 +290,10 @@ function leaveSocket(socketId: string, opts?: { intentional?: boolean }) {
     if (room.members.size === 0) {
       // 혼자 나간 경우도 즉시 삭제하지 않음 — 동시 재입장 레이스 완화
       scheduleEmptyRoomExpiry(code);
+      void persistDelete(code);
       return;
     }
+    void persistRoom(room);
     io.to(code).emit(SocketEvents.RoomNotice, {
       type: "member-leave",
       nickname: leaving.nickname,
@@ -288,7 +327,7 @@ io.on("connection", (socket) => {
     games.cancelLadder(socket, payload, ack);
   });
 
-  socket.on(SocketEvents.RoomCreate, (payload: RoomCreatePayload, ack?: (r: RoomCreateAck) => void) => {
+  socket.on(SocketEvents.RoomCreate, async (payload: RoomCreatePayload, ack?: (r: RoomCreateAck) => void) => {
     try {
       if (!payload?.nickname?.trim() || !payload.character) {
         ack?.({ ok: false, error: "nickname and character required" });
@@ -317,6 +356,13 @@ io.on("connection", (socket) => {
       cancelEmptyRoomTimer(code);
       socketRoom.set(socket.id, code);
       void socket.join(code);
+      try {
+        await persistRoom(room);
+      } catch (err) {
+        rooms.delete(code);
+        socketRoom.delete(socket.id);
+        throw err;
+      }
       ack?.({ ok: true, code, memberId, room: snapshot(room) });
       broadcastSync(room);
     } catch (err) {
@@ -324,7 +370,7 @@ io.on("connection", (socket) => {
     }
   });
 
-  socket.on(SocketEvents.RoomJoin, (payload: RoomJoinPayload, ack?: (r: RoomJoinAck) => void) => {
+  socket.on(SocketEvents.RoomJoin, async (payload: RoomJoinPayload, ack?: (r: RoomJoinAck) => void) => {
     try {
       const code = payload?.code?.trim().toUpperCase();
       if (!code || !payload?.nickname?.trim() || !payload.character) {
@@ -380,6 +426,7 @@ io.on("connection", (socket) => {
       cancelEmptyRoomTimer(code);
       socketRoom.set(socket.id, code);
       void socket.join(code);
+      await persistRoom(room);
       ack?.({ ok: true, memberId, room: snapshot(room) });
       if (isNew) {
         socket.to(code).emit(SocketEvents.RoomNotice, {
@@ -499,6 +546,7 @@ io.on("connection", (socket) => {
     const member = room.members.get(memberId);
     if (!member) return;
     member.statusMessage = sanitizeStatusMessage(payload?.statusMessage);
+    void persistRoom(room);
     broadcastSync(room);
   });
 
@@ -848,6 +896,28 @@ io.on("connection", (socket) => {
     }
   });
 });
+
+async function hydrateRooms() {
+  const saved = await roomStore.loadRooms();
+  for (const row of saved) {
+    if (!row.members.length || rooms.has(row.code)) {
+      if (!row.members.length) void persistDelete(row.code);
+      continue;
+    }
+    const room: Room = {
+      code: row.code,
+      members: new Map(row.members.map((member) => [member.id, member])),
+      socketToMember: new Map(),
+    };
+    rooms.set(row.code, room);
+    for (const member of row.members) {
+      scheduleMemberRemoval(row.code, member.id, RESTORE_MEMBER_GRACE_MS);
+    }
+    console.log(`[rooms] restored ${row.code} members=${row.members.length}`);
+  }
+}
+
+await hydrateRooms();
 
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`[MoniBuddy] server listening on 0.0.0.0:${PORT}`);
