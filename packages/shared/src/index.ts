@@ -314,19 +314,35 @@ export function generateLadderRungs(
   rows = 10,
 ): boolean[][] {
   const n = Math.max(1, columns);
+  const gaps = Math.max(0, n - 1);
   const rungs: boolean[][] = [];
   for (let row = 0; row < rows; row++) {
-    const line: boolean[] = [];
+    const line: boolean[] = Array.from({ length: gaps }, () => false);
+    if (gaps === 0) {
+      rungs.push(line);
+      continue;
+    }
     let skipNext = false;
-    for (let gap = 0; gap < n - 1; gap++) {
+    let placed = 0;
+    for (let gap = 0; gap < gaps; gap++) {
       if (skipNext) {
-        line.push(false);
         skipNext = false;
         continue;
       }
-      const put = Math.random() < 0.45;
-      line.push(put);
-      if (put) skipNext = true;
+      // 가로 연결을 충분히 만들어 직선 낙하를 막음
+      const put = Math.random() < 0.68;
+      if (put) {
+        line[gap] = true;
+        skipNext = true;
+        placed += 1;
+      }
+    }
+    // 한 줄에 가로가 하나도 없으면 강제 1개 (옆 칸과 겹치지 않게)
+    if (placed === 0) {
+      const gap = Math.floor(Math.random() * gaps);
+      line[gap] = true;
+      if (gap > 0) line[gap - 1] = false;
+      if (gap < gaps - 1) line[gap + 1] = false;
     }
     rungs.push(line);
   }
