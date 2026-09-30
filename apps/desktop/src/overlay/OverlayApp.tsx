@@ -256,6 +256,31 @@ function recentPlainChats(messages: ChatMessage[] | undefined, now = Date.now())
     .slice(-CHAT_LOG_MAX);
 }
 
+/** 같은 사람은 항상 같은 색. 본문 색은 건드리지 않음 */
+const CHAT_NICK_COLORS = [
+  "#7ec8ff",
+  "#ffb3c7",
+  "#ffe08a",
+  "#9be7a8",
+  "#d4b5ff",
+  "#ffc49a",
+  "#7eefe0",
+  "#ff9ad5",
+  "#c6e86a",
+  "#a9c4ff",
+  "#ffd27a",
+  "#f0a0e4",
+];
+
+function chatNickColor(memberId: string, nickname: string): string {
+  const key = (memberId || nickname || "?").trim();
+  let hash = 0;
+  for (let i = 0; i < key.length; i++) {
+    hash = (hash * 33 + key.charCodeAt(i)) >>> 0;
+  }
+  return CHAT_NICK_COLORS[hash % CHAT_NICK_COLORS.length]!;
+}
+
 function readLocalPins(): LocalPins {
   try {
     const raw =
@@ -1859,7 +1884,7 @@ export function OverlayApp() {
               ✕
             </button>
           </div>
-          <div className="chat-log-list pixel-scroll" ref={chatLogListRef}>
+          <div className="chat-log-list" ref={chatLogListRef}>
             {!inRoom ? (
               <p className="chat-log-empty">방에 들어가면 여기에 쌓여요</p>
             ) : logLines.length === 0 ? (
@@ -1867,7 +1892,9 @@ export function OverlayApp() {
             ) : (
               logLines.map((m) => (
                 <p key={m.id} className="chat-log-line">
-                  <strong>{m.nickname}</strong>
+                  <strong style={{ color: chatNickColor(m.memberId, m.nickname) }}>
+                    {m.nickname}
+                  </strong>
                   <span>{m.text}</span>
                 </p>
               ))
