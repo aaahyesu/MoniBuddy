@@ -99,6 +99,34 @@
       ]
     },
     {
+      "id": "ank_monkey",
+      "label": "원숭이",
+      "group": "ank",
+      "displaySize": 80,
+      "free": true,
+      "grows": true,
+      "ext": "gif",
+      "stages": [
+        { "stage": 0, "scale": 0.55, "file": "ank_monkey", "label": "애기" },
+        { "stage": 1, "scale": 0.78, "file": "ank_monkey", "label": "성장" },
+        { "stage": 2, "scale": 1.0, "file": "ank_monkey", "label": "성체" }
+      ]
+    },
+    {
+      "id": "ank_turn",
+      "label": "돌아보기",
+      "group": "ank",
+      "displaySize": 80,
+      "free": true,
+      "grows": true,
+      "ext": "gif",
+      "stages": [
+        { "stage": 0, "scale": 0.55, "file": "ank_turn", "label": "애기" },
+        { "stage": 1, "scale": 0.78, "file": "ank_turn", "label": "성장" },
+        { "stage": 2, "scale": 1.0, "file": "ank_turn", "label": "성체" }
+      ]
+    },
+    {
       "id": "ank_withFriend",
       "label": "친구랑",
       "group": "ank",
@@ -110,6 +138,272 @@
         { "stage": 0, "scale": 0.55, "file": "ank_withFriend", "label": "애기" },
         { "stage": 1, "scale": 0.78, "file": "ank_withFriend", "label": "성장" },
         { "stage": 2, "scale": 1.0, "file": "ank_withFriend", "label": "성체" }
+      ]
+    },
+    {
+      "id": "hamzzi_drink",
+      "label": "꿀물",
+      "group": "hamzzi",
+      "displaySize": 80,
+      "free": true,
+      "grows": true,
+      "ext": "gif",
+      "stages": [
+        { "stage": 0, "scale": 0.55, "file": "hamzzi_drink", "label": "애기" },
+        { "stage": 1, "scale": 0.78, "file": "hamzzi_drink", "label": "성장" },
+        { "stage": 2, "scale": 1.0, "file": "hamzzi_drink", "label": "성체" }
+      ]
+    },
+    {
+      "id": "hamzzi_fly",
+      "label": "배달",
+      "group": "hamzzi",
+      "displaySize": 80,
+      "free": true,
+      "grows": true,
+      "ext": "gif",
+      "stages": [
+        { "stage": 0, "scale": 0.55, "file": "hamzzi_fly", "label": "애기" },
+        { "stage": 1, "scale": 0.78, "file": "hamzzi_fly", "label": "성장" },
+        { "stage": 2, "scale": 1.0, "file": "hamzzi_fly", "label": "성체" }
+      ]
+    },
+    {
+      "id": "hamzzi_straw",
+      "label": "빨대",
+      "group": "hamzzi",
+      "displaySize": 80,
+      "free": true,
+      "grows": true,
+      "ext": "gif",
+      "stages": [
+        { "stage": 0, "scale": 0.55, "file": "hamzzi_straw", "label": "애기" },
+        { "stage": 1, "scale": 0.78, "file": "hamzzi_straw", "label": "성장" },
+        { "stage": 2, "scale": 1.0, "file": "hamzzi_straw", "label": "성체" }
+      ]
+    },
+    {
+      "id": "hamzzi_chair",
+      "label": "의자",
+      "group": "hamzzi",
+      "displaySize": 80,
+      "free": true,
+      "grows": true,
+      "ext": "gif",
+      "stages": [
+        { "stage": 0, "scale": 0.55, "file": "hamzzi_chair", "label": "애기" },
+        { "stage": 1, "scale": 0.78, "file": "hamzzi_chair", "label": "성장" },
+        { "stage": 2, "scale": 1.0, "file": "hamzzi_chair", "label": "성체" }
+      ]
+    },
+    {
+      "id": "hamzzi_box",
+      "label": "택배",
+      "group": "hamzzi",
+      "displaySize": 80,
+      "free": true,
+      "grows": true,
+      "ext": "gif",
+      "stages": [
+        { "stage": 0, "scale": 0.55, "file": "hamzzi_box", "label": "애기" },
+        { "stage": 1, "scale": 0.78, "file": "hamzzi_box", "label": "성장" },
+        { "stage": 2, "scale": 1.0, "file": "hamzzi_box", "label": "성체" }
+      ]
+    },
+    {
+      "id": "hamzzi_home",
+      "label": "집가고파",
+      "group": "hamzzi",
+      "displaySize": 80,
+      "free": true,
+      "grows": true,
+      "ext": "gif",
+      "stages": [
+        { "stage": 0, "scale": 0.55, "file": "hamzzi_home", "label": "애기" },
+        { "stage": 1, "scale": 0.78, "file": "hamzzi_home", "label": "성장" },
+        { "stage": 2, "scale": 1.0, "file": "hamzzi_home", "label": "성체" }
+      ]
+    },
+    {
+      "id": "hamzzi_offwork",
+      "label": "퇴근",
+      "group": "hamzzi",
+      "displaySize": 80,
+      "free": true,
+      "grows": true,
+      "ext": "gif",
+      "stages": [
+        { "stage": 0, "scale": 0.55, "file": "hamzzi_offwork", "label": "애기" },
+        { "stage": 1, "scale": 0.78, "file": "hamzzi_offwork", "label": "성장" },
+        { "stage": 2, "scale": 1.0, "file": "hamzzi_offwork", "label": "성체" }
+      ]
+    },
+    {
+      "id": "hamzzi_hungry",
+      "label": "배고파",
+      "group": "hamzzi",
+      "displaySize": 80,
+      "free": true,
+      "grows": true,
+      "ext": "gif",
+      "stages": [
+        { "stage": 0, "scale": 0.55, "file": "hamzzi_hungry", "label": "애기" },
+        { "stage": 1, "scale": 0.78, "file": "hamzzi_hungry", "label": "성장" },
+        { "stage": 2, "scale": 1.0, "file": "hamzzi_hungry", "label": "성체" }
+      ]
+    },
+    {
+      "id": "hamzzi_sleepy",
+      "label": "피곤",
+      "group": "hamzzi",
+      "displaySize": 80,
+      "free": true,
+      "grows": true,
+      "ext": "gif",
+      "stages": [
+        { "stage": 0, "scale": 0.55, "file": "hamzzi_sleepy", "label": "애기" },
+        { "stage": 1, "scale": 0.78, "file": "hamzzi_sleepy", "label": "성장" },
+        { "stage": 2, "scale": 1.0, "file": "hamzzi_sleepy", "label": "성체" }
+      ]
+    },
+    {
+      "id": "hamzzi_blanket",
+      "label": "이불",
+      "group": "hamzzi",
+      "displaySize": 80,
+      "free": true,
+      "grows": true,
+      "ext": "gif",
+      "stages": [
+        { "stage": 0, "scale": 0.55, "file": "hamzzi_blanket", "label": "애기" },
+        { "stage": 1, "scale": 0.78, "file": "hamzzi_blanket", "label": "성장" },
+        { "stage": 2, "scale": 1.0, "file": "hamzzi_blanket", "label": "성체" }
+      ]
+    },
+    {
+      "id": "hamzzi_snack",
+      "label": "간식",
+      "group": "hamzzi",
+      "displaySize": 80,
+      "free": true,
+      "grows": true,
+      "ext": "gif",
+      "stages": [
+        { "stage": 0, "scale": 0.55, "file": "hamzzi_snack", "label": "애기" },
+        { "stage": 1, "scale": 0.78, "file": "hamzzi_snack", "label": "성장" },
+        { "stage": 2, "scale": 1.0, "file": "hamzzi_snack", "label": "성체" }
+      ]
+    },
+    {
+      "id": "hamzzi_monday",
+      "label": "월요일",
+      "group": "hamzzi",
+      "displaySize": 80,
+      "free": true,
+      "grows": true,
+      "ext": "gif",
+      "stages": [
+        { "stage": 0, "scale": 0.55, "file": "hamzzi_monday", "label": "애기" },
+        { "stage": 1, "scale": 0.78, "file": "hamzzi_monday", "label": "성장" },
+        { "stage": 2, "scale": 1.0, "file": "hamzzi_monday", "label": "성체" }
+      ]
+    },
+    {
+      "id": "hamzzi_talk",
+      "label": "프리토킹",
+      "group": "hamzzi",
+      "displaySize": 80,
+      "free": true,
+      "grows": true,
+      "ext": "gif",
+      "stages": [
+        { "stage": 0, "scale": 0.55, "file": "hamzzi_talk", "label": "애기" },
+        { "stage": 1, "scale": 0.78, "file": "hamzzi_talk", "label": "성장" },
+        { "stage": 2, "scale": 1.0, "file": "hamzzi_talk", "label": "성체" }
+      ]
+    },
+    {
+      "id": "hamzzi_asmr",
+      "label": "ASMR",
+      "group": "hamzzi",
+      "displaySize": 80,
+      "free": true,
+      "grows": true,
+      "ext": "gif",
+      "stages": [
+        { "stage": 0, "scale": 0.55, "file": "hamzzi_asmr", "label": "애기" },
+        { "stage": 1, "scale": 0.78, "file": "hamzzi_asmr", "label": "성장" },
+        { "stage": 2, "scale": 1.0, "file": "hamzzi_asmr", "label": "성체" }
+      ]
+    },
+    {
+      "id": "hamzzi_bag",
+      "label": "가방",
+      "group": "hamzzi",
+      "displaySize": 80,
+      "free": true,
+      "grows": true,
+      "ext": "gif",
+      "stages": [
+        { "stage": 0, "scale": 0.55, "file": "hamzzi_bag", "label": "애기" },
+        { "stage": 1, "scale": 0.78, "file": "hamzzi_bag", "label": "성장" },
+        { "stage": 2, "scale": 1.0, "file": "hamzzi_bag", "label": "성체" }
+      ]
+    },
+    {
+      "id": "roro_clap",
+      "label": "박수",
+      "group": "roro",
+      "displaySize": 80,
+      "free": true,
+      "grows": true,
+      "ext": "gif",
+      "stages": [
+        { "stage": 0, "scale": 0.55, "file": "roro_clap", "label": "애기" },
+        { "stage": 1, "scale": 0.78, "file": "roro_clap", "label": "성장" },
+        { "stage": 2, "scale": 1.0, "file": "roro_clap", "label": "성체" }
+      ]
+    },
+    {
+      "id": "roro_dance",
+      "label": "댄스",
+      "group": "roro",
+      "displaySize": 80,
+      "free": true,
+      "grows": true,
+      "ext": "gif",
+      "stages": [
+        { "stage": 0, "scale": 0.55, "file": "roro_dance", "label": "애기" },
+        { "stage": 1, "scale": 0.78, "file": "roro_dance", "label": "성장" },
+        { "stage": 2, "scale": 1.0, "file": "roro_dance", "label": "성체" }
+      ]
+    },
+    {
+      "id": "roro_move",
+      "label": "손인사",
+      "group": "roro",
+      "displaySize": 80,
+      "free": true,
+      "grows": true,
+      "ext": "gif",
+      "stages": [
+        { "stage": 0, "scale": 0.55, "file": "roro_move", "label": "애기" },
+        { "stage": 1, "scale": 0.78, "file": "roro_move", "label": "성장" },
+        { "stage": 2, "scale": 1.0, "file": "roro_move", "label": "성체" }
+      ]
+    },
+    {
+      "id": "road_cat",
+      "label": "하품",
+      "group": "road",
+      "displaySize": 80,
+      "free": true,
+      "grows": true,
+      "ext": "png",
+      "stages": [
+        { "stage": 0, "scale": 0.55, "file": "road_cat", "label": "애기" },
+        { "stage": 1, "scale": 0.78, "file": "road_cat", "label": "성장" },
+        { "stage": 2, "scale": 1.0, "file": "road_cat", "label": "성체" }
       ]
     },
     {

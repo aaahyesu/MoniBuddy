@@ -15,7 +15,7 @@ export type BuddyStageDef = {
   label?: string;
 };
 
-export type BuddyGroup = "ank" | "gnd" | "reward";
+export type BuddyGroup = "ank" | "gnd" | "hamzzi" | "roro" | "road" | "reward";
 
 export type BuddyDef = {
   id: string;
@@ -49,6 +49,27 @@ export const BUDDY_FILE_EXT: Record<string, BuddyExt> = {
   ank_sick: "png",
   ank_surprised: "png",
   ank_withFriend: "png",
+  ank_monkey: "gif",
+  ank_turn: "gif",
+  hamzzi_drink: "gif",
+  hamzzi_fly: "gif",
+  hamzzi_straw: "gif",
+  hamzzi_chair: "gif",
+  hamzzi_box: "gif",
+  hamzzi_home: "gif",
+  hamzzi_offwork: "gif",
+  hamzzi_hungry: "gif",
+  hamzzi_sleepy: "gif",
+  hamzzi_blanket: "gif",
+  hamzzi_snack: "gif",
+  hamzzi_monday: "gif",
+  hamzzi_talk: "gif",
+  hamzzi_asmr: "gif",
+  hamzzi_bag: "gif",
+  roro_clap: "gif",
+  roro_dance: "gif",
+  roro_move: "gif",
+  road_cat: "png",
   gnd_dance: "png",
   gnd_angry: "png",
   gnd_cheese: "png",
@@ -108,6 +129,8 @@ export function resolveBuddyExt(
   if (def?.ext) return def.ext;
   if (BUDDY_FILE_EXT[fileStem]) return BUDDY_FILE_EXT[fileStem];
   if (fileStem.startsWith("gnd_")) return "png";
+  if (fileStem.startsWith("hamzzi_") || fileStem.startsWith("roro_")) return "gif";
+  if (fileStem.startsWith("road_")) return "png";
   if (fileStem.startsWith("ank_")) return BUDDY_FILE_EXT[fileStem] ?? "png";
   return "png";
 }
@@ -167,17 +190,30 @@ export function toBuddyCharacter(def: BuddyDef, xp = 0): BuddyCharacter {
 }
 
 export function buddyGroupOf(def: BuddyDef | undefined): BuddyGroup {
-  if (def?.group === "reward" || def?.group === "gnd" || def?.group === "ank") {
+  if (
+    def?.group === "reward" ||
+    def?.group === "gnd" ||
+    def?.group === "ank" ||
+    def?.group === "hamzzi" ||
+    def?.group === "roro" ||
+    def?.group === "road"
+  ) {
     return def.group;
   }
   if (def?.id?.startsWith("reward_")) return "reward";
   if (def?.id?.startsWith("gnd_")) return "gnd";
+  if (def?.id?.startsWith("hamzzi_")) return "hamzzi";
+  if (def?.id?.startsWith("roro_")) return "roro";
+  if (def?.id?.startsWith("road_")) return "road";
   return "ank";
 }
 
 export const BUDDY_GROUPS: Array<{ id: BuddyGroup; label: string }> = [
   { id: "ank", label: "안경만두" },
   { id: "gnd", label: "가나디" },
+  { id: "hamzzi", label: "햄찌" },
+  { id: "roro", label: "로로" },
+  { id: "road", label: "길냥이" },
   { id: "reward", label: "리워드" },
 ];
 
