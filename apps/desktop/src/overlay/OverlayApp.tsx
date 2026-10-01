@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   BUBBLE_TTL_MS,
   BUDDY_MIN_DISPLAY_SIZE,
@@ -694,11 +694,17 @@ export function OverlayApp() {
   localPinsRef.current = localPins;
   repositionDraftRef.current = repositionDraft;
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    if (!chatLog.enabled) return;
     const el = chatLogListRef.current;
     if (!el) return;
-    el.scrollTop = el.scrollHeight;
-  }, [logLines]);
+    const pinToLatest = () => {
+      el.scrollTop = el.scrollHeight;
+    };
+    pinToLatest();
+    const frame = requestAnimationFrame(pinToLatest);
+    return () => cancelAnimationFrame(frame);
+  }, [logLines, chatLog.enabled]);
 
   const setDraggingNow = (v: boolean) => {
     draggingRef.current = v;
