@@ -155,34 +155,6 @@
       ]
     },
     {
-      "id": "hamzzi_fly",
-      "label": "배달",
-      "group": "hamzzi",
-      "displaySize": 80,
-      "free": true,
-      "grows": true,
-      "ext": "gif",
-      "stages": [
-        { "stage": 0, "scale": 0.55, "file": "hamzzi_fly", "label": "애기" },
-        { "stage": 1, "scale": 0.78, "file": "hamzzi_fly", "label": "성장" },
-        { "stage": 2, "scale": 1.0, "file": "hamzzi_fly", "label": "성체" }
-      ]
-    },
-    {
-      "id": "hamzzi_straw",
-      "label": "빨대",
-      "group": "hamzzi",
-      "displaySize": 80,
-      "free": true,
-      "grows": true,
-      "ext": "gif",
-      "stages": [
-        { "stage": 0, "scale": 0.55, "file": "hamzzi_straw", "label": "애기" },
-        { "stage": 1, "scale": 0.78, "file": "hamzzi_straw", "label": "성장" },
-        { "stage": 2, "scale": 1.0, "file": "hamzzi_straw", "label": "성체" }
-      ]
-    },
-    {
       "id": "hamzzi_chair",
       "label": "의자",
       "group": "hamzzi",
@@ -306,20 +278,6 @@
         { "stage": 0, "scale": 0.55, "file": "hamzzi_monday", "label": "애기" },
         { "stage": 1, "scale": 0.78, "file": "hamzzi_monday", "label": "성장" },
         { "stage": 2, "scale": 1.0, "file": "hamzzi_monday", "label": "성체" }
-      ]
-    },
-    {
-      "id": "hamzzi_talk",
-      "label": "프리토킹",
-      "group": "hamzzi",
-      "displaySize": 80,
-      "free": true,
-      "grows": true,
-      "ext": "gif",
-      "stages": [
-        { "stage": 0, "scale": 0.55, "file": "hamzzi_talk", "label": "애기" },
-        { "stage": 1, "scale": 0.78, "file": "hamzzi_talk", "label": "성장" },
-        { "stage": 2, "scale": 1.0, "file": "hamzzi_talk", "label": "성체" }
       ]
     },
     {
