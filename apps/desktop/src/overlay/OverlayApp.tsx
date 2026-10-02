@@ -25,6 +25,7 @@ import {
 import { GuideSpotlight } from "../components/GuideSpotlight";
 import { ChatAttachmentsView } from "../components/ChatAttachmentsView";
 import {
+  fileFromBase64,
   fileToAttachment,
   imageFileToAttachment,
   linkToAttachment,
@@ -1633,7 +1634,8 @@ export function OverlayApp() {
 
     const attachCmd = parseAttachCommand(raw);
     if (attachCmd) {
-      if (attachCmd.pick === "link") {
+      const pick = attachCmd.pick;
+      if (pick === "link") {
         if (!attachCmd.url) {
           setAttachHint("예: /링크 https://주소");
           return;
@@ -1651,7 +1653,34 @@ export function OverlayApp() {
         return;
       }
       pendingPickRef.current = attachCmd;
-      const input = attachCmd.pick === "image" ? imageInputRef.current : fileInputRef.current;
+      if (isTauri()) {
+        void invokeSafe<{ name: string; mime: string; base64: string } | null>(
+          "pick_chat_file",
+          { kind: pick },
+        )
+          .then((picked) => {
+            if (!picked) {
+              pendingPickRef.current = null;
+              return;
+            }
+            sendPickedFile(
+              fileFromBase64(picked.name, picked.mime, picked.base64),
+              pick,
+            );
+          })
+          .catch((err: unknown) => {
+            const message = err instanceof Error ? err.message : String(err ?? "");
+            if (message.includes("html-picker")) {
+              const input = pick === "image" ? imageInputRef.current : fileInputRef.current;
+              input?.click();
+              return;
+            }
+            pendingPickRef.current = null;
+            setAttachHint(message || "파일을 열지 못했어요");
+          });
+        return;
+      }
+      const input = pick === "image" ? imageInputRef.current : fileInputRef.current;
       input?.click();
       return;
     }
