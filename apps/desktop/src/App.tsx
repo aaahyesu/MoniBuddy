@@ -388,7 +388,21 @@ export function App() {
       ladder: room.ladder,
       bombExplode: room.bombExplode,
     };
-    localStorage.setItem("monibuddy.runtime.v1", JSON.stringify(payload));
+    try {
+      localStorage.setItem("monibuddy.runtime.v1", JSON.stringify(payload));
+    } catch {
+      const slim = {
+        ...payload,
+        messages: payload.messages.map((m) =>
+          m.attachments?.length ? { ...m, attachments: undefined } : m,
+        ),
+      };
+      try {
+        localStorage.setItem("monibuddy.runtime.v1", JSON.stringify(slim));
+      } catch {
+        /* 용량이 가득 차면 이번 기록은 건너뛴다 */
+      }
+    }
     if (room.roomCode) {
       localStorage.setItem(
         "monibuddy.activeRoom.v1",
@@ -422,8 +436,11 @@ export function App() {
     [profile.character],
   );
 
-  const sendChatWithProgress = (text: string) => {
-    room.sendChat(text);
+  const sendChatWithProgress = (
+    text: string,
+    attachments?: import("@monibuddy/shared").ChatAttachment[],
+  ) => {
+    room.sendChat(text, attachments);
     progress.trackQuest("quest:chat_10");
     if (activeBuddyId) progress.addGrowthXp(activeBuddyId, 1);
   };
@@ -434,11 +451,17 @@ export function App() {
       try {
         const raw = localStorage.getItem("monibuddy.pendingChat.v1");
         if (!raw) return;
-        const parsed = JSON.parse(raw) as { text?: string; at?: number };
+        const parsed = JSON.parse(raw) as {
+          text?: string;
+          at?: number;
+          attachments?: import("@monibuddy/shared").ChatAttachment[];
+        };
         localStorage.removeItem("monibuddy.pendingChat.v1");
-        if (!parsed.text || !room.roomCode) return;
+        const text = parsed.text?.trim() ?? "";
+        const attachments = parsed.attachments;
+        if ((!text && !attachments?.length) || !room.roomCode) return;
         if (parsed.at && Date.now() - parsed.at > 8000) return;
-        sendChatWithProgress(parsed.text);
+        sendChatWithProgress(text, attachments);
       } catch {
         /* ignore */
       }

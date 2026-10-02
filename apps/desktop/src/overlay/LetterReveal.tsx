@@ -1,9 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
+import type { ChatAttachment } from "@monibuddy/shared";
+import { ChatAttachmentsView } from "../components/ChatAttachmentsView";
+
 export type LetterItem = {
   id: string;
   nickname: string;
   text: string;
+  attachments?: ChatAttachment[];
 };
 
 type Phase = "icon" | "opening" | "revealed";
@@ -245,9 +249,10 @@ export function LetterReveal({ letter, onDismiss, onPhaseChange }: Props) {
 
   useEffect(() => {
     if (phase !== "revealed") return;
-    const t = window.setTimeout(() => onDismissRef.current(), REVEALED_TTL_MS);
+    const ttl = letter.attachments?.length ? 12000 : REVEALED_TTL_MS;
+    const t = window.setTimeout(() => onDismissRef.current(), ttl);
     return () => window.clearTimeout(t);
-  }, [phase, letter.id]);
+  }, [phase, letter.id, letter.attachments]);
 
   useEffect(() => {
     if (phase !== "revealed" || fanfarePlayed.current) return;
@@ -344,7 +349,8 @@ export function LetterReveal({ letter, onDismiss, onPhaseChange }: Props) {
               ))}
             </div>
             <p className="letter-from">{letter.nickname}의 편지</p>
-            <p className="letter-reveal-text">{letter.text}</p>
+            {letter.text ? <p className="letter-reveal-text">{letter.text}</p> : null}
+            <ChatAttachmentsView items={letter.attachments} />
             <button
               type="button"
               className="letter-dismiss"

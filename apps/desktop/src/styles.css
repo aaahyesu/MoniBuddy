@@ -135,6 +135,86 @@
   cursor: not-allowed;
 }
 
+.composer-attach-btn {
+  flex: 0 0 auto;
+  height: 32px;
+  padding: 0 0.6rem;
+  border: none;
+  border-radius: 999px;
+  background: #2a2a2a;
+  color: #f5f5f5;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+.composer-attach-btn.open,
+.composer-attach-btn:hover {
+  background: #3a3a3a;
+}
+.composer-attach-list,
+.composer-attach-menu {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+}
+.composer-attach-chip,
+.composer-attach-menu button,
+.composer-attach-link button {
+  border: 1px solid #3a3a3a;
+  background: #1a1a1a;
+  color: #f5f5f5;
+  border-radius: 999px;
+  padding: 0.25rem 0.6rem;
+  font-size: 0.72rem;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.composer-attach-link {
+  display: flex;
+  gap: 0.3rem;
+  min-width: 0;
+}
+.composer-attach-link input {
+  width: 160px;
+  border: 1px solid #3a3a3a;
+  border-radius: 999px;
+  background: #111;
+  color: #f5f5f5;
+  padding: 0.25rem 0.6rem;
+  font-size: 0.75rem;
+}
+.composer-attach-hint {
+  margin: 0;
+  color: #ffb4b4;
+  font-size: 0.72rem;
+}
+.chat-attach {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-top: 0.2rem;
+}
+.chat-attach-img {
+  max-width: 140px;
+  max-height: 100px;
+  object-fit: contain;
+  border-radius: 6px;
+}
+.chat-log-line .chat-attach-img {
+  max-width: 120px;
+  max-height: 80px;
+}
+.chat-attach-link {
+  color: #7ec8ff;
+  font-size: 0.72rem;
+  word-break: break-all;
+}
+.letter-reveal-card .chat-attach-img {
+  max-width: 200px;
+  max-height: 140px;
+}
 .composer-bar {
   display: flex;
   align-items: center;
@@ -210,6 +290,9 @@
   pointer-events: none;
 }
 
+.composer-cmd-tip p {
+  margin: 0;
+}
 .composer-cmd-tip strong {
   color: #ffe14d;
   font-weight: 700;
@@ -381,6 +464,8 @@
 }
 .chat-log-line span {
   color: rgba(255, 255, 255, 0.92);
+  word-break: break-all;
+  overflow-wrap: anywhere;
 }
 
 .move-switch {
@@ -624,7 +709,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: normal;
-  word-break: keep-all;
+  word-break: break-all;
   overflow-wrap: anywhere;
   max-height: calc(1.35em * 2);
 }

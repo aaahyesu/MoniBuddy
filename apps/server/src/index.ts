@@ -38,6 +38,7 @@ import {
   PresenceHelloPayload,
   RoomCreateAck,
   RoomCreatePayload,
+  sanitizeChatAttachments,
   RoomJoinAck,
   RoomJoinPayload,
   RoomSnapshot,
@@ -257,6 +258,7 @@ app.get("/assets/:filename", (req, res) => {
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: { origin: "*" },
+  maxHttpBufferSize: 1_500_000,
 });
 
 function snapshot(room: Room): RoomSnapshot {
@@ -460,6 +462,7 @@ io.on("connection", (socket) => {
 
     const nicknames = [...room.members.values()].map((m) => m.nickname);
     const rawText = String(payload?.text ?? "");
+    const attachments = sanitizeChatAttachments(payload?.attachments);
     if (games.handleChatCommand(socket, rawText)) return;
 
     const parsed = parseEffectChat(rawText, nicknames);
@@ -502,7 +505,7 @@ io.on("connection", (socket) => {
     }
 
     const text = parsed.text.slice(0, MAX_CHAT_LENGTH);
-    if (!text) return;
+    if (!text && attachments.length === 0) return;
 
     const message: ChatMessage = {
       id: nanoid(12),
@@ -514,6 +517,7 @@ io.on("connection", (socket) => {
       ...(parsed.kind === "letter" && parsed.targetNickname
         ? { targetNickname: parsed.targetNickname }
         : {}),
+      ...(attachments.length ? { attachments } : {}),
     };
     emitToRoomOrTarget(
       message,

@@ -4,6 +4,7 @@ import {
   BUDDY_MIN_DISPLAY_SIZE,
   MAX_CHAT_LENGTH,
   type ChatMessage,
+  type ChatAttachment,
   type Character,
   type CharMotion,
   type FriendInviteRecvPayload,
@@ -22,6 +23,14 @@ import {
   type LadderState,
 } from "@monibuddy/shared";
 import { GuideSpotlight } from "../components/GuideSpotlight";
+import { ChatAttachmentsView } from "../components/ChatAttachmentsView";
+import {
+  fileToAttachment,
+  imageFileToAttachment,
+  linkToAttachment,
+  parseAttachCommand,
+  type AttachCommand,
+} from "../lib/chatAttachments";
 import { resolveDefaultServerUrl } from "../lib/serverUrl";
 import { CharacterView } from "../components/CharacterView";
 import {
@@ -64,7 +73,13 @@ import { invokeSafe, isTauri, setClickThrough } from "../lib/tauri";
 import { LetterReveal, type LetterItem } from "./LetterReveal";
 import { EggThrow } from "./EggThrow";
 
-type Bubble = { memberId: string; text: string; until: number; id: string };
+type Bubble = {
+  memberId: string;
+  text: string;
+  until: number;
+  id: string;
+  attachments?: ChatAttachment[];
+};
 
 const OVERLAY_NOTICE_TTL_MS = 5200;
 
@@ -247,7 +262,7 @@ function isPlainRoomChat(msg: ChatMessage): boolean {
   const text = msg.text || "";
   if (isEggChat(text)) return false;
   if (parseLetterChat(text).kind === "letter") return false;
-  return Boolean(text.trim());
+  return Boolean(text.trim() || msg.attachments?.length);
 }
 
 function recentPlainChats(messages: ChatMessage[] | undefined, now = Date.now()) {
@@ -378,6 +393,7 @@ export function OverlayApp() {
   const [plusOpen, setPlusOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
   const [chat, setChat] = useState("");
+  const [attachHint, setAttachHint] = useState("");
   const [inRoom, setInRoom] = useState(false);
   const [roomCode, setRoomCode] = useState<string | null>(null);
   const [joinOpen, setJoinOpen] = useState(false);
@@ -419,6 +435,9 @@ export function OverlayApp() {
   const [ladderDismissed, setLadderDismissed] = useState(false);
 
   const chatInputRef = useRef<HTMLInputElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const pendingPickRef = useRef<AttachCommand | null>(null);
   const selfIdRef = useRef<string>("local");
   const seenChat = useRef(new Set<string>());
   const lastTs = useRef(performance.now());
@@ -970,7 +989,7 @@ export function OverlayApp() {
               })();
         if (msg.kind === "letter" || letterBody) {
           const text = letterBody;
-          if (!text) continue;
+          if (!text && !msg.attachments?.length) continue;
           if (fromSelf) {
             const now = Date.now();
             const idx = recentSelfLetters.current.findIndex(
@@ -989,6 +1008,7 @@ export function OverlayApp() {
                 id: msg.id,
                 nickname: (msg.nickname || "").trim() || "친구",
                 text,
+                attachments: msg.attachments,
               },
             ];
           });
@@ -1003,6 +1023,7 @@ export function OverlayApp() {
             text: msg.text,
             until: Date.now() + BUBBLE_TTL_MS,
             id: msg.id,
+            attachments: msg.attachments,
           },
         ]);
       }
@@ -1523,13 +1544,77 @@ export function OverlayApp() {
     closePanel();
   };
 
-  const insertCommand = (draft: string) => {
+  const publishOutgoing = (
+    text: string,
+    attachments: ChatAttachment[],
+    letter: boolean,
+    letterTo?: string,
+  ) => {
+    const body = text.slice(0, MAX_CHAT_LENGTH);
+    if (!body && attachments.length === 0) return;
+    if (letter) {
+      if (!letterTo) {
+        const nick = (readProfile().nickname || "").trim() || "나";
+        recentSelfLetters.current.push({ text: body, at: Date.now() });
+        setLetterQueue((prev) => [
+          ...prev,
+          {
+            id: `local-letter-${Date.now()}`,
+            nickname: nick,
+            text: body,
+            attachments,
+          },
+        ]);
+      }
+      const outbound = letterTo
+        ? body
+          ? `/편지 @${letterTo} ${body}`
+          : `/편지 @${letterTo}`
+        : body
+          ? `/편지 ${body}`
+          : "/편지";
+      localStorage.setItem(
+        PENDING_CHAT_KEY,
+        JSON.stringify({ text: outbound, attachments, at: Date.now() }),
+      );
+    } else {
+      const selfId = selfIdRef.current || "local";
+      const optimisticId = `local-${Date.now()}`;
+      setBubbles((prev) => [
+        ...prev.filter((b) => b.until > Date.now() && b.memberId !== selfId),
+        {
+          memberId: selfId,
+          text: body,
+          until: Date.now() + BUBBLE_TTL_MS,
+          id: optimisticId,
+          attachments,
+        },
+      ]);
+      seenChat.current.add(optimisticId);
+      localStorage.setItem(
+        PENDING_CHAT_KEY,
+        JSON.stringify({ text: body, attachments, at: Date.now() }),
+      );
+    }
+    window.dispatchEvent(new Event("monibuddy:pendingChat"));
+    setChat("");
+    setAttachHint("");
     setPlusOpen(false);
-    setJoinOpen(false);
     setMoveOpen(false);
-    setComposeMode("chat");
-    setChat(draft);
-    window.setTimeout(() => chatInputRef.current?.focus(), 30);
+  };
+
+  const sendPickedFile = (file: File, pick: "image" | "file") => {
+    const pending = pendingPickRef.current;
+    pendingPickRef.current = null;
+    if (!pending || pending.pick !== pick) return;
+    const task = pick === "image" ? imageFileToAttachment(file) : fileToAttachment(file);
+    void task
+      .then((item) => {
+        publishOutgoing(pending.caption, [item], pending.letter, pending.letterTo);
+      })
+      .catch((err: unknown) => {
+        setAttachHint(err instanceof Error ? err.message : "첨부를 보내지 못했어요");
+      });
   };
 
   const sendChat = () => {
@@ -1545,6 +1630,31 @@ export function OverlayApp() {
       return;
     }
     if (!raw) return;
+
+    const attachCmd = parseAttachCommand(raw);
+    if (attachCmd) {
+      if (attachCmd.pick === "link") {
+        if (!attachCmd.url) {
+          setAttachHint("예: /링크 https://주소");
+          return;
+        }
+        try {
+          publishOutgoing(
+            attachCmd.caption,
+            [linkToAttachment(attachCmd.url)],
+            attachCmd.letter,
+            attachCmd.letterTo,
+          );
+        } catch (err) {
+          setAttachHint(err instanceof Error ? err.message : "링크를 확인하세요");
+        }
+        return;
+      }
+      pendingPickRef.current = attachCmd;
+      const input = attachCmd.pick === "image" ? imageInputRef.current : fileInputRef.current;
+      input?.click();
+      return;
+    }
 
     const rtNow = readRuntime();
     const roomNow = readActiveRoomCode(rtNow);
@@ -1602,55 +1712,15 @@ export function OverlayApp() {
     }
 
     if (effect.kind === "letter") {
-      if (!effect.text) return;
       const text = effect.text.slice(0, MAX_CHAT_LENGTH);
-      // 지정 편지는 상대만 봄 — 보낸 사람은 로컬 연출 생략
-      if (!effect.targetNickname) {
-        const nick = (readProfile().nickname || "").trim() || "나";
-        recentSelfLetters.current.push({ text, at: Date.now() });
-        setLetterQueue((prev) => [
-          ...prev,
-          { id: `local-letter-${Date.now()}`, nickname: nick, text },
-        ]);
-      }
-      const outbound = effect.targetNickname
-        ? `/편지 @${effect.targetNickname} ${text}`
-        : `/편지 ${text}`;
-      localStorage.setItem(
-        PENDING_CHAT_KEY,
-        JSON.stringify({ text: outbound, at: Date.now() }),
-      );
-      window.dispatchEvent(new Event("monibuddy:pendingChat"));
-      setChat("");
-      setPlusOpen(false);
-      setMoveOpen(false);
+      if (!text) return;
+      publishOutgoing(text, [], true, effect.targetNickname);
       return;
     }
 
     const chatText = effect.text.slice(0, MAX_CHAT_LENGTH);
     if (!chatText) return;
-
-    const selfId = selfIdRef.current || "local";
-    const optimisticId = `local-${Date.now()}`;
-    setBubbles((prev) => [
-      ...prev.filter((b) => b.until > Date.now() && b.memberId !== selfId),
-      {
-        memberId: selfId,
-        text: chatText,
-        until: Date.now() + BUBBLE_TTL_MS,
-        id: optimisticId,
-      },
-    ]);
-    seenChat.current.add(optimisticId);
-
-    localStorage.setItem(
-      PENDING_CHAT_KEY,
-      JSON.stringify({ text: chatText, at: Date.now() }),
-    );
-    window.dispatchEvent(new Event("monibuddy:pendingChat"));
-    setChat("");
-    setPlusOpen(false);
-    setMoveOpen(false);
+    publishOutgoing(chatText, [], false);
   };
 
   const actors = useMemo(() => {
@@ -1766,10 +1836,20 @@ export function OverlayApp() {
   const bombDraft = composeMode === "chat" && isBombChatDraft(chat);
   const ladderDraft = composeMode === "chat" && isLadderChatDraft(chat);
   const bombParse = bombDraft ? parseMiniGameChat(chat) : null;
-  const letterCmdTip = letterDraft
+  const letterCmdTip = letterDraft && !parseAttachCommand(chat)
     ? effectDraft?.targetNickname
       ? `@${effectDraft.targetNickname} 에게 보내요`
       : "특정 사람은 @닉네임. 예: /편지 @혜수 안녕"
+    : null;
+  const attachDraft = composeMode === "chat" ? parseAttachCommand(chat) : null;
+  const attachCmdTip = attachDraft
+    ? attachDraft.pick === "link"
+      ? attachDraft.url
+        ? "링크를 보내요"
+        : "예: /링크 https://주소"
+      : attachDraft.pick === "file"
+        ? "전송하면 파일을 고릅니다. 70KB 이하"
+        : "전송하면 이미지를 고릅니다. 편지는 /편지 @닉 /사진"
     : null;
   const eggCmdTip = eggDraft
     ? effectDraft?.targetNickname
@@ -1786,6 +1866,29 @@ export function OverlayApp() {
           : "초를 정했어요 (시간은 참가자에게 비밀)"
         : "예: /폭탄 30 또는 /폭탄 랜덤  (5~120초)"
     : null;
+  const slashDraft = composeMode === "chat" && chat.trimStart().startsWith("/");
+  const commandHelp =
+    !slashDraft || plusOpen || moveOpen
+      ? null
+      : attachCmdTip
+        ? {
+            title:
+              attachDraft?.pick === "file"
+                ? "파일"
+                : attachDraft?.pick === "link"
+                  ? "링크"
+                  : "사진",
+            detail: attachCmdTip,
+          }
+        : letterCmdTip
+          ? { title: "편지", detail: letterCmdTip }
+          : eggCmdTip
+            ? { title: "계란", detail: eggCmdTip }
+            : bombCmdTip
+              ? { title: "폭탄", detail: bombCmdTip }
+              : ladderCmdTip
+                ? { title: "사다리", detail: ladderCmdTip }
+                : { title: "명령", detail: "" };
   // 대상이 잡히면 본문 유무와 관계없이 →닉 (전원은 대상 없을 때만)
   const targetHint = effectDraft?.targetNickname
     ? `→${effectDraft.targetNickname}`
@@ -1917,12 +2020,13 @@ export function OverlayApp() {
               <p className="chat-log-empty">최근 10분 채팅이 없어요</p>
             ) : (
               logLines.map((m) => (
-                <p key={m.id} className="chat-log-line">
+                <div key={m.id} className="chat-log-line">
                   <strong style={{ color: chatNickColor(m.memberId, m.nickname) }}>
                     {m.nickname}
                   </strong>
-                  <span>{m.text}</span>
-                </p>
+                  {m.text ? <span>{m.text}</span> : null}
+                  <ChatAttachmentsView items={m.attachments} />
+                </div>
               ))
             )}
           </div>
@@ -2085,10 +2189,11 @@ export function OverlayApp() {
                 </div>
               );
             }
-            if (bubble) {
+            if (bubble && (bubble.text || bubble.attachments?.length)) {
               return (
                 <div className="bubble">
-                  <span className="bubble-text">{bubble.text}</span>
+                  {bubble.text ? <span className="bubble-text">{bubble.text}</span> : null}
+                  <ChatAttachmentsView items={bubble.attachments} />
                 </div>
               );
             }
@@ -2188,18 +2293,6 @@ export function OverlayApp() {
               data-guide="guide-overlay-room-actions"
               className="composer-plus-menu"
             >
-              <button type="button" onClick={() => insertCommand("/편지 ")}>
-                편지
-              </button>
-              <button type="button" onClick={() => insertCommand("/계란 ")}>
-                계란
-              </button>
-              <button type="button" onClick={() => insertCommand("/폭탄 ")}>
-                폭탄
-              </button>
-              <button type="button" onClick={() => insertCommand("/사다리")}>
-                사다리
-              </button>
               <button
                 type="button"
                 onClick={() => {
@@ -2426,26 +2519,22 @@ export function OverlayApp() {
               </div>
             </div>
           )}
-          {letterCmdTip && (
+          {commandHelp && (
             <div className="composer-cmd-tip" aria-live="polite">
-              <strong>편지</strong> · {letterCmdTip}
+              {commandHelp.detail ? (
+                <p>
+                  <strong>{commandHelp.title}</strong> · {commandHelp.detail}
+                </p>
+              ) : (
+                <p>
+                  <strong>/편지</strong> · <strong>/계란</strong> · <strong>/사진</strong> ·{" "}
+                  <strong>/링크</strong> · <strong>/파일</strong> · <strong>/폭탄</strong> ·{" "}
+                  <strong>/사다리</strong>
+                </p>
+              )}
             </div>
           )}
-          {eggCmdTip && (
-            <div className="composer-cmd-tip" aria-live="polite">
-              <strong>계란</strong> · {eggCmdTip}
-            </div>
-          )}
-          {bombCmdTip && (
-            <div className="composer-cmd-tip" aria-live="polite">
-              <strong>폭탄</strong> · {bombCmdTip}
-            </div>
-          )}
-          {ladderCmdTip && (
-            <div className="composer-cmd-tip" aria-live="polite">
-              <strong>사다리</strong> · {ladderCmdTip}
-            </div>
-          )}
+          {attachHint ? <p className="composer-attach-hint">{attachHint}</p> : null}
           <form
             className="composer-bar"
             onSubmit={(e) => {
@@ -2466,6 +2555,27 @@ export function OverlayApp() {
             >
               +
             </button>
+            <input
+              ref={imageInputRef}
+              type="file"
+              accept="image/*"
+              hidden
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = "";
+                if (file) sendPickedFile(file, "image");
+              }}
+            />
+            <input
+              ref={fileInputRef}
+              type="file"
+              hidden
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = "";
+                if (file) sendPickedFile(file, "file");
+              }}
+            />
             <input
               ref={chatInputRef}
               value={chat}
