@@ -118,7 +118,7 @@ export function RoomPanel(props: Props) {
             className={`${inputClass} min-w-0 flex-1`}
             value={props.chatInput}
             maxLength={120}
-            placeholder="/편지 [닉] 내용 · /계란 [닉]"
+            placeholder="/편지 @닉 내용 · /계란 [닉]"
             onChange={(e) => props.onChatInput(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter") props.onSend();

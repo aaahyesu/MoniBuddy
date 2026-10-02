@@ -83,7 +83,7 @@ jobs:
 
             ### 서버
             - 기본 서버: https://monibuddy-server.onrender.com (또는 repo Variable `MONIBUDDY_SERVER_URL`)
-            - 로컬 서버를 쓰려면 앱에서 서버 URL을 `http://127.0.0.1:3847` 로 바꾸면 됩니다.
+            - 로컬 개발 서버를 쓰려면 앱에서 서버 URL을 `http://127.0.0.1:3857` 로 바꾸면 됩니다.
           releaseDraft: false
           prerelease: false
           includeUpdaterJson: true

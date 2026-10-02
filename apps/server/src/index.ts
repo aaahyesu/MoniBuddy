@@ -56,7 +56,9 @@ import { RoomStore } from "./roomStore";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const UPLOAD_DIR = path.resolve(__dirname, "../uploads");
 const DATA_DIR = path.resolve(__dirname, "../data");
-const PORT = Number(process.env.PORT ?? 3847);
+// tsx 개발 서버는 3857. dist(`npm start`)와 Render(PORT)는 3847을 기본으로 둔다.
+const devFromSource = import.meta.url.replace(/\\/g, "/").includes("/src/index.ts");
+const PORT = Number(process.env.PORT ?? (devFromSource ? 3857 : 3847));
 
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 const friends = await FriendStore.create(DATA_DIR);
@@ -384,21 +386,21 @@ io.on("connection", (socket) => {
       }
       leaveSocket(socket.id);
       const nickname = payload.nickname.trim().slice(0, 16);
-      // 끊김 유예 중인 같은 닉 멤버가 있으면 슬롯 재사용 (중복 캐릭터 방지)
-      const reclaimable = [...room.members.values()].find(
-        (m) =>
-          m.nickname.trim().toLowerCase() === nickname.toLowerCase() &&
-          !memberHasSocket(room, m.id),
+      // 같은 닉은 항상 한 슬롯만 쓴다. 이전 소켓이 아직 살아 있어도
+      // 새 멤버를 만들지 않고 그 캐릭터에 연결만 추가한다.
+      const nicknameKey = nickname.toLowerCase();
+      const existing = [...room.members.values()].find(
+        (m) => m.nickname.trim().toLowerCase() === nicknameKey,
       );
 
       let memberId: string;
       let member: Member;
       let isNew = false;
-      if (reclaimable) {
-        memberId = reclaimable.id;
+      if (existing) {
+        memberId = existing.id;
         cancelPendingMemberRemoval(code, memberId);
         member = {
-          ...reclaimable,
+          ...existing,
           nickname,
           character: payload.character,
           statusMessage: sanitizeStatusMessage(payload.statusMessage),

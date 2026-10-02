@@ -6,7 +6,8 @@ export const FRIEND_CODE_LENGTH = 6;
 export const PNG_MAX_BYTES = 128 * 1024;
 export const GIF_MAX_BYTES = 512 * 1024;
 export const UPLOAD_MAX_EDGE = 128;
-export const DEFAULT_SERVER_URL = "http://127.0.0.1:3847";
+/** 로컬 개발 서버(`npm run dev:server`). 빌드본 `npm start` 기본 포트는 3847. */
+export const DEFAULT_SERVER_URL = "http://127.0.0.1:3857";
 export const APP_NAME = "MoniBuddy";
 export const APP_NAME_KO = "모니버디";
 
@@ -139,11 +140,10 @@ function matchNickname(candidate: string, nicknames: string[]) {
 }
 
 /**
- * `/편지 [닉] 내용`, `/계란 [닉]`
- * - `/편지 안녕` → 전원 (토큰 1개·방 닉 아님 = 본문)
- * - `/편지 민수` → 대상만 지정(본문 대기) — 힌트 `→민수`
- * - `/편지 민수 안녕` → 대상+본문 (닉은 본문에 넣지 않음)
- * - 방 닉 목록에 없어도 2토큰이면 첫 토큰을 대상으로 유지(서버 최종 매칭)
+ * `/편지 내용`, `/편지 @닉 내용`, `/계란 [닉]`
+ * - `/편지 안녕 하세요` → 전원, 본문 전체
+ * - `/편지 @혜수` → 대상만 지정(본문 대기) — 힌트 `→혜수`
+ * - `/편지 @혜수 안녕안녕` → 대상+본문 (`@` 없는 첫 단어는 본문)
  */
 export function parseEffectChat(
   raw: string,
@@ -165,19 +165,12 @@ export function parseEffectChat(
     const rest = letterBody[1].trim();
     if (!rest) return { kind: "letter", text: "" };
 
-    const parts = rest.match(/^(@?\S+)\s+([\s\S]+)$/);
-    if (parts) {
-      const token = stripTargetToken(parts[1]);
-      const body = parts[2].trim();
-      if (!body) {
-        // `/편지 닉 ` 처럼 본문 없음 — 닉이면 대상으로 표시
-        const hitOnly = matchNickname(token, nicks);
-        if (hitOnly) {
-          return { kind: "letter", text: "", targetNickname: hitOnly };
-        }
-        return { kind: "letter", text: "", targetNickname: token };
-      }
-      const hit = matchNickname(token, nicks);
+    const mentioned = rest.match(/^@(\S+)(?:\s+([\s\S]*))?$/);
+    if (mentioned) {
+      const token = stripTargetToken(mentioned[1]);
+      const body = (mentioned[2] ?? "").trim();
+      const hit = token ? matchNickname(token, nicks) : undefined;
+      if (!token) return { kind: "letter", text: rest };
       return {
         kind: "letter",
         text: body,
@@ -185,12 +178,6 @@ export function parseEffectChat(
       };
     }
 
-    // 토큰 1개: 방 멤버 닉이면 대상(본문 대기), 아니면 전원 본문
-    const token = stripTargetToken(rest);
-    const hit = matchNickname(token, nicks);
-    if (hit) {
-      return { kind: "letter", text: "", targetNickname: hit };
-    }
     return { kind: "letter", text: rest };
   }
   if (/^\/(?:편지|letter)\s*$/i.test(trimmed)) {
