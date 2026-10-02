@@ -1,6 +1,10 @@
 export const MAX_ROOM_MEMBERS = 8;
 export const MAX_CHAT_LENGTH = 80;
 export const BUBBLE_TTL_MS = 4000;
+/** 메시지에 실어 보내는 첨부. 서버 디스크에는 남기지 않는다. */
+export const MAX_CHAT_ATTACHMENTS = 3;
+export const MAX_CHAT_IMAGE_DATA_URL = 140_000;
+export const MAX_CHAT_FILE_DATA_URL = 100_000;
 export const INVITE_CODE_LENGTH = 6;
 export const FRIEND_CODE_LENGTH = 6;
 export const PNG_MAX_BYTES = 128 * 1024;
@@ -87,6 +91,56 @@ export type Member = {
   statusMessage?: string;
 };
 
+export type ChatAttachment =
+  | { kind: "link"; url: string }
+  | { kind: "image"; name: string; dataUrl: string }
+  | { kind: "file"; name: string; mime: string; dataUrl: string };
+
+export function sanitizeChatAttachments(raw: unknown): ChatAttachment[] {
+  if (!Array.isArray(raw)) return [];
+  const out: ChatAttachment[] = [];
+  let images = 0;
+  let files = 0;
+  for (const item of raw) {
+    if (out.length >= MAX_CHAT_ATTACHMENTS) break;
+    if (!item || typeof item !== "object") continue;
+    const row = item as Record<string, unknown>;
+    if (row.kind === "link") {
+      const url = String(row.url ?? "").trim();
+      if (!/^https?:\/\/\S+$/i.test(url) || url.length > 500) continue;
+      out.push({ kind: "link", url });
+      continue;
+    }
+    if (row.kind === "image") {
+      if (images >= 1) continue;
+      const dataUrl = String(row.dataUrl ?? "");
+      if (!dataUrl.startsWith("data:image/") || dataUrl.length > MAX_CHAT_IMAGE_DATA_URL) {
+        continue;
+      }
+      images += 1;
+      out.push({
+        kind: "image",
+        name: String(row.name ?? "image").slice(0, 80),
+        dataUrl,
+      });
+      continue;
+    }
+    if (row.kind === "file") {
+      if (files >= 1) continue;
+      const dataUrl = String(row.dataUrl ?? "");
+      if (!dataUrl.startsWith("data:") || dataUrl.length > MAX_CHAT_FILE_DATA_URL) continue;
+      files += 1;
+      out.push({
+        kind: "file",
+        name: String(row.name ?? "file").slice(0, 80),
+        mime: String(row.mime ?? "application/octet-stream").slice(0, 80),
+        dataUrl,
+      });
+    }
+  }
+  return out;
+}
+
 export type ChatMessage = {
   id: string;
   memberId: string;
@@ -97,6 +151,8 @@ export type ChatMessage = {
   kind?: "chat" | "letter" | "egg";
   /** 편지/계란 대상 닉네임 (없으면 방 전원) */
   targetNickname?: string;
+  /** 링크·이미지·파일. 서버에 저장하지 않고 수신 중인 클라이언트에만 전달 */
+  attachments?: ChatAttachment[];
 };
 
 export type EffectChatParse = {
@@ -579,6 +635,7 @@ export type RoomJoinAck =
 
 export type ChatSendPayload = {
   text: string;
+  attachments?: ChatAttachment[];
 };
 
 export type CharStatePayload = {

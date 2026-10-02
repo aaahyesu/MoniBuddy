@@ -1,9 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { io, type Socket } from "socket.io-client";
+import {
+  io,
+  type Socket,
+} from "socket.io-client";
 import {
   type Character,
   type CharState,
   type ChatMessage,
+  type ChatAttachment,
   type FriendGroup,
   type FriendInfo,
   type FriendInviteRecvPayload,
@@ -17,6 +21,7 @@ import {
   SocketEvents,
   defaultCharState,
   nicknamesEqual,
+  sanitizeChatAttachments,
 } from "@monibuddy/shared";
 import { cacheGuideSeenFromServer } from "../lib/productGuide";
 import {
@@ -535,10 +540,14 @@ export function useRoomSocket(opts: Options) {
     return () => window.clearTimeout(t);
   }, [bombExplode]);
 
-  const sendChat = useCallback((text: string) => {
+  const sendChat = useCallback((text: string, attachments?: ChatAttachment[]) => {
     const trimmed = text.trim();
-    if (!trimmed) return;
-    socketRef.current?.emit(SocketEvents.ChatSend, { text: trimmed });
+    const safe = sanitizeChatAttachments(attachments);
+    if (!trimmed && safe.length === 0) return;
+    socketRef.current?.emit(SocketEvents.ChatSend, {
+      text: trimmed,
+      ...(safe.length ? { attachments: safe } : {}),
+    });
   }, []);
 
   const publishStatusMessage = useCallback(

@@ -109,7 +109,7 @@ export function RoomPanel(props: Props) {
                   →{m.targetNickname}
                 </span>
               ) : null}
-              : {m.text}
+              <span className="break-all">: {m.text}</span>
             </div>
           ))}
         </div>
