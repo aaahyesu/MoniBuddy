@@ -4,7 +4,7 @@
  */
 import { io } from "socket.io-client";
 
-const URL = process.env.MONIBUDDY_URL || "http://127.0.0.1:3847";
+const URL = process.env.MONIBUDDY_URL || "http://127.0.0.1:3857";
 
 const character = {
   kind: "parts",

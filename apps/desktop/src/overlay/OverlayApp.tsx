@@ -1523,6 +1523,15 @@ export function OverlayApp() {
     closePanel();
   };
 
+  const insertCommand = (draft: string) => {
+    setPlusOpen(false);
+    setJoinOpen(false);
+    setMoveOpen(false);
+    setComposeMode("chat");
+    setChat(draft);
+    window.setTimeout(() => chatInputRef.current?.focus(), 30);
+  };
+
   const sendChat = () => {
     const raw = chat.trim();
     if (composeMode === "status") {
@@ -1605,7 +1614,7 @@ export function OverlayApp() {
         ]);
       }
       const outbound = effect.targetNickname
-        ? `/편지 ${effect.targetNickname} ${text}`
+        ? `/편지 @${effect.targetNickname} ${text}`
         : `/편지 ${text}`;
       localStorage.setItem(
         PENDING_CHAT_KEY,
@@ -1757,6 +1766,17 @@ export function OverlayApp() {
   const bombDraft = composeMode === "chat" && isBombChatDraft(chat);
   const ladderDraft = composeMode === "chat" && isLadderChatDraft(chat);
   const bombParse = bombDraft ? parseMiniGameChat(chat) : null;
+  const letterCmdTip = letterDraft
+    ? effectDraft?.targetNickname
+      ? `@${effectDraft.targetNickname} 에게 보내요`
+      : "특정 사람은 @닉네임. 예: /편지 @혜수 안녕"
+    : null;
+  const eggCmdTip = eggDraft
+    ? effectDraft?.targetNickname
+      ? `@${effectDraft.targetNickname} 에게 보내요`
+      : "방 전체에게 보내요. 특정 사람은 @닉네임"
+    : null;
+  const ladderCmdTip = ladderDraft ? "참가자 사다리를 열어요" : null;
   const bombCmdTip = bombDraft
     ? bombParse?.kind === "bomb-pass"
       ? "폭탄을 클릭하거나 /폭탄 넘겨 [닉] 으로 넘길 수 있어요"
@@ -2168,6 +2188,18 @@ export function OverlayApp() {
               data-guide="guide-overlay-room-actions"
               className="composer-plus-menu"
             >
+              <button type="button" onClick={() => insertCommand("/편지 ")}>
+                편지
+              </button>
+              <button type="button" onClick={() => insertCommand("/계란 ")}>
+                계란
+              </button>
+              <button type="button" onClick={() => insertCommand("/폭탄 ")}>
+                폭탄
+              </button>
+              <button type="button" onClick={() => insertCommand("/사다리")}>
+                사다리
+              </button>
               <button
                 type="button"
                 onClick={() => {
@@ -2394,9 +2426,24 @@ export function OverlayApp() {
               </div>
             </div>
           )}
+          {letterCmdTip && (
+            <div className="composer-cmd-tip" aria-live="polite">
+              <strong>편지</strong> · {letterCmdTip}
+            </div>
+          )}
+          {eggCmdTip && (
+            <div className="composer-cmd-tip" aria-live="polite">
+              <strong>계란</strong> · {eggCmdTip}
+            </div>
+          )}
           {bombCmdTip && (
             <div className="composer-cmd-tip" aria-live="polite">
               <strong>폭탄</strong> · {bombCmdTip}
+            </div>
+          )}
+          {ladderCmdTip && (
+            <div className="composer-cmd-tip" aria-live="polite">
+              <strong>사다리</strong> · {ladderCmdTip}
             </div>
           )}
           <form
@@ -2427,7 +2474,7 @@ export function OverlayApp() {
                 composeMode === "status"
                   ? "상태메시지 (항상 표시)…"
                   : letterDraft
-                    ? "/편지 [닉] 내용…"
+                    ? "/편지 @닉 내용…"
                     : eggDraft
                       ? "/계란 [닉]"
                       : bombDraft
@@ -2435,7 +2482,7 @@ export function OverlayApp() {
                         : ladderDraft
                           ? "/사다리"
                           : inRoom
-                            ? "메시지 · /편지 · /폭탄 · /사다리"
+                            ? "메시지 · /편지 · /계란 · /폭탄 · /사다리"
                             : "혼잣말 · /편지 · /계란…"
               }
               onChange={(e) => setChat(e.target.value)}

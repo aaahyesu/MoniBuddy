@@ -14,6 +14,7 @@ import { useLocalProfile } from "./hooks/useLocalProfile";
 import { useProductGuide } from "./hooks/useProductGuide";
 import { useProgress } from "./hooks/useProgress";
 import { useRoomSocket } from "./hooks/useRoomSocket";
+import { cn } from "./lib/cn";
 import { loadBuddyManifest } from "./lib/defaultBuddies";
 import {
   readDeviceIdentity,
@@ -67,6 +68,7 @@ export function App() {
   const progress = useProgress(freeIds);
   const [screen, setScreen] = useState<Screen | null>(null);
   const [buddyTab, setBuddyTab] = useState<"character" | "quests">("character");
+  const [profileTab, setProfileTab] = useState<"character" | "settings">("character");
   const [hotkeyError, setHotkeyError] = useState("");
   const [device, setDevice] = useState(() => readDeviceIdentity());
 
@@ -507,70 +509,101 @@ export function App() {
         <ShellCard>
           <Brand
             title={APP_NAME}
-            subtitle="프로필 · 단축키"
+            subtitle="캐릭터 · 설정"
             guideToggle={guideToggle}
           />
           <UpdateBanner />
-          <Field label="닉네임">
-            <input
-              className={inputClass}
-              value={profile.nickname}
-              maxLength={16}
-              onChange={(e) => setNickname(e.target.value)}
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              className={cn(
+                "border px-3 py-2 text-[0.72rem] uppercase tracking-wider transition",
+                profileTab === "character"
+                  ? "border-white bg-white font-bold text-black"
+                  : "border-white/40 bg-transparent text-mute hover:border-white hover:text-white",
+              )}
+              onClick={() => setProfileTab("character")}
+            >
+              캐릭터
+            </button>
+            <button
+              type="button"
+              className={cn(
+                "border px-3 py-2 text-[0.72rem] uppercase tracking-wider transition",
+                profileTab === "settings"
+                  ? "border-white bg-white font-bold text-black"
+                  : "border-white/40 bg-transparent text-mute hover:border-white hover:text-white",
+              )}
+              onClick={() => setProfileTab("settings")}
+            >
+              설정
+            </button>
+          </div>
+          {profileTab === "character" ? (
+            <SimpleBuddyPicker
+              character={profile.character}
+              serverUrl={profile.serverUrl}
+              onChange={setCharacter}
+              isUnlocked={progress.isUnlocked}
+              getXp={progress.getXp}
             />
-          </Field>
-          <Field label="서버 URL">
-            <input
-              className={inputClass}
-              value={profile.serverUrl}
-              onChange={(e) => setServerUrl(e.target.value.trim())}
-              placeholder="https://monibuddy-server.onrender.com"
-            />
-          </Field>
-          <label className="flex cursor-pointer items-center gap-2 text-left text-[0.82rem] text-white/90">
-            <input
-              type="checkbox"
-              className="size-4 shrink-0 accent-white"
-              checked={profile.forcePolling}
-              onChange={(e) => setForcePolling(e.target.checked)}
-            />
-            <span>회사망 호환 (HTTPS 폴링만)</span>
-          </label>
-          <p className="m-0 pl-6 text-[0.72rem] leading-relaxed text-mute">
-            WebSocket이 막힌 망에서 켜 두세요. Wi‑Fi에서 더 빠르게 쓰려면 끌 수 있어요.
-          </p>
-          {isTauri() ? (
-            <div className="grid gap-2 text-left">
-              <span className="text-[0.72rem] uppercase tracking-wider text-mute">
-                오버레이 단축키
-              </span>
-              <HotkeyField
-                value={profile.overlayHotkey}
-                onChange={(hotkey) => {
-                  setHotkeyError("");
-                  setOverlayHotkey(hotkey);
-                }}
-              />
-              {hotkeyError ? (
-                <p className="m-0 text-[0.72rem] text-rose-300">
-                  등록 실패: {hotkeyError}. 다른 조합을 시도해 보세요.
-                </p>
+          ) : (
+            <>
+              <Field label="닉네임">
+                <input
+                  className={inputClass}
+                  value={profile.nickname}
+                  maxLength={16}
+                  onChange={(e) => setNickname(e.target.value)}
+                />
+              </Field>
+              <Field label="서버 URL">
+                <input
+                  className={inputClass}
+                  value={profile.serverUrl}
+                  onChange={(e) => setServerUrl(e.target.value.trim())}
+                  placeholder="https://monibuddy-server.onrender.com"
+                />
+              </Field>
+              <label className="flex cursor-pointer items-center gap-2 text-left text-[0.82rem] text-white/90">
+                <input
+                  type="checkbox"
+                  className="size-4 shrink-0 accent-white"
+                  checked={profile.forcePolling}
+                  onChange={(e) => setForcePolling(e.target.checked)}
+                />
+                <span>회사망 호환 (HTTPS 폴링만)</span>
+              </label>
+              <p className="m-0 pl-6 text-[0.72rem] leading-relaxed text-mute">
+                WebSocket이 막힌 망에서 켜 두세요. Wi‑Fi에서 더 빠르게 쓰려면 끌 수 있어요.
+              </p>
+              {isTauri() ? (
+                <div className="grid gap-2 text-left">
+                  <span className="text-[0.72rem] uppercase tracking-wider text-mute">
+                    오버레이 단축키
+                  </span>
+                  <HotkeyField
+                    value={profile.overlayHotkey}
+                    onChange={(hotkey) => {
+                      setHotkeyError("");
+                      setOverlayHotkey(hotkey);
+                    }}
+                  />
+                  {hotkeyError ? (
+                    <p className="m-0 text-[0.72rem] text-rose-300">
+                      등록 실패: {hotkeyError}. 다른 조합을 시도해 보세요.
+                    </p>
+                  ) : null}
+                </div>
               ) : null}
-            </div>
-          ) : null}
-          <p className="m-0 text-[0.72rem] leading-relaxed text-mute">
-            연결이 안 되면 위 주소가{" "}
-            <span className="text-accent-cyan">https://monibuddy-server.onrender.com</span>{" "}
-            인지 확인하세요. Render 무료 서버는 첫 접속에 30초 걸릴 수 있어요.
-          </p>
-          <p className="mb-0 text-[0.9rem] text-mute">캐릭터</p>
-          <SimpleBuddyPicker
-            character={profile.character}
-            serverUrl={profile.serverUrl}
-            onChange={setCharacter}
-            isUnlocked={progress.isUnlocked}
-            getXp={progress.getXp}
-          />
+              <p className="m-0 text-[0.72rem] leading-relaxed text-mute">
+                연결이 안 되면 위 주소가{" "}
+                <span className="text-accent-cyan">https://monibuddy-server.onrender.com</span>{" "}
+                인지 확인하세요. Render 무료 서버는 첫 접속에 30초 걸릴 수 있어요.
+              </p>
+              <ClickDebugPanel />
+            </>
+          )}
           <Btn
             variant="primary"
             size="lg"
@@ -578,7 +611,6 @@ export function App() {
           >
             확인
           </Btn>
-          <ClickDebugPanel />
         </ShellCard>
         {guideLayer}
       </>

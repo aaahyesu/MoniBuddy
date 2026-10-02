@@ -20,6 +20,13 @@ export type LocalProfile = {
 function normalizeServerUrl(saved: string | undefined): string {
   const url = (saved || "").trim().replace(/\/$/, "");
   if (!url || url === "http://" || url === "https://") return DEFAULT_SERVER;
+  // 개발 서버 포트를 3857로 옮긴 뒤, 저장돼 있던 3847은 새 로컬 주소로 맞춘다.
+  if (
+    import.meta.env.DEV &&
+    (url === "http://127.0.0.1:3847" || url === "http://localhost:3847")
+  ) {
+    return DEFAULT_SERVER;
+  }
   // 설치본에 남은 localhost는 공용 Render 서버로 교체
   if (
     import.meta.env.PROD &&

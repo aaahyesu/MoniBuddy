@@ -9,5 +9,5 @@ export function resolveDefaultServerUrl(): string {
   }
   // 배포/설치본은 공용 서버, 로컬 개발은 localhost
   if (import.meta.env.PROD) return PRODUCTION_SERVER_URL;
-  return "http://127.0.0.1:3847";
+  return "http://127.0.0.1:3857";
 }

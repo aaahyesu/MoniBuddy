@@ -14,7 +14,7 @@ MoniBuddy는 화면 가장자리에 작은 캐릭터(버디)를 띄워 두고, �
 - **오버레이**: 모니터 테두리를 걷는 캐릭터 + 채팅 입력바 + 말풍선
 - **서버**: 방·채팅·캐릭터 상태·친구 presence 동기화 (Socket.IO)
 
-로컬에서는 `127.0.0.1:3847` 서버를 쓰고, 친구와 쓰려면 Render 등 공용 서버 URL로 연결하면 됩니다.
+로컬 개발 서버는 `127.0.0.1:3857`을 쓰고, 빌드본(`npm start`)은 `127.0.0.1:3847`입니다. 친구와 쓰려면 Render 등 공용 서버 URL로 연결하면 됩니다.
 
 ---
 
@@ -157,7 +157,7 @@ erDiagram
 | 실시간 | Socket.IO Client |
 | 단축키 | tauri-plugin-global-shortcut |
 | 설치본 | NSIS 설치 패키지 |
-| 기본 서버 URL | `http://127.0.0.1:3847` |
+| 기본 서버 URL | 개발 `http://127.0.0.1:3857` |
 
 ### 서버 (`apps/server`)
 
@@ -166,7 +166,7 @@ erDiagram
 | 런타임 | Node.js |
 | API | Express |
 | 실시간 | Socket.IO |
-| 기본 포트 | `3847` (`PORT` 환경변수로 변경 가능) |
+| 기본 포트 | 개발 `3857`, `npm start` `3847` (`PORT` 환경변수로 변경 가능) |
 | 제한 | 방당 최대 8명, 채팅 최대 80자, 초대코드 6자, 친구 코드 6자 |
 | 친구 저장 | Turso(LibSQL) — `TURSO_DATABASE_URL` / 로컬 `data/friends.db` |
 
@@ -231,7 +231,7 @@ npm run build:shared
 npm run dev:server
 ```
 
-→ `http://127.0.0.1:3847`
+→ `http://127.0.0.1:3857`
 
 ### 3) 데스크톱 앱 (터미널 2)
 
