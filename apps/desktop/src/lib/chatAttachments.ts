@@ -22,6 +22,13 @@ export function attachmentLabel(item: ChatAttachment): string {
   return item.name || "파일";
 }
 
+export function fileFromBase64(name: string, mime: string, base64: string): File {
+  const bin = atob(base64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i);
+  return new File([bytes], name, { type: mime || "application/octet-stream" });
+}
+
 export async function imageFileToAttachment(file: File): Promise<ChatAttachment> {
   if (file.type === "image/gif" && file.size <= 80_000) {
     const dataUrl = await readDataUrl(file);

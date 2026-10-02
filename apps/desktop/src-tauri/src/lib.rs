@@ -20,6 +20,8 @@ static CAPTURE_FREEZE: AtomicBool = AtomicBool::new(false);
 static OVERLAY_USER_VISIBLE: AtomicBool = AtomicBool::new(true);
 /// 마지막 click-through 적용값 (중복 set_ignore_cursor_events 방지)
 static CLICK_THROUGH: AtomicU8 = AtomicU8::new(255);
+/// 파일 선택 창이 열려 있는 동안 오버레이를 최상단으로 올리지 않음
+static FILE_DIALOG_OPEN: AtomicBool = AtomicBool::new(false);
 /// z-order promote 쓰로틀 (set_click_through 경로에서는 올리지 않음)
 static LAST_Z_PROMOTE_MS: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
@@ -46,6 +48,10 @@ fn set_click_through(
     enabled: bool,
     force: Option<bool>,
 ) -> Result<(), String> {
+    // 파일 선택 창이 위에 있는 동안 클릭 통과로 커서를 가리지 않음
+    if FILE_DIALOG_OPEN.load(Ordering::SeqCst) {
+        return Ok(());
+    }
     // 캡처 양보 중에는 클릭 통과 상태를 건드리지 않음
     if YIELD_STATE.load(Ordering::SeqCst) != 0 {
         // 캐시를 무효화해 양보 종료 후 JS 재요청이 실제 적용되도록
@@ -113,6 +119,263 @@ fn show_settings(app: AppHandle) -> Result<(), String> {
     win.set_focus().map_err(|e| e.to_string())?;
     Ok(())
 }
+
+#[derive(serde::Serialize)]
+struct PickedChatFile {
+    name: String,
+    mime: String,
+    base64: String,
+}
+
+/// 투명 오버레이가 파일 창의 부모가 되면 Windows에서 커서가 사라진다.
+/// 선택하는 동안 오버레이를 내리고, 부모 없는 대화상자로 연다.
+#[tauri::command]
+fn pick_chat_file(app: AppHandle, kind: String) -> Result<Option<PickedChatFile>, String> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    let app_for_dialog = app.clone();
+    let kind_for_dialog = kind.clone();
+    app.run_on_main_thread(move || {
+        let result = {
+            let _guard = OverlayDialogGuard::enter(&app_for_dialog);
+            pick_unparented_file(&kind_for_dialog)
+        };
+        let _ = tx.send(result);
+    })
+    .map_err(|e| e.to_string())?;
+    let Some(path) = rx.recv().map_err(|e| e.to_string())?? else {
+        return Ok(None);
+    };
+
+    let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
+    if bytes.len() > 12 * 1024 * 1024 {
+        return Err("파일이 너무 커요".into());
+    }
+    let name = path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("file")
+        .to_string();
+    let mime = mime_for_picked(&name, &kind);
+    Ok(Some(PickedChatFile {
+        name,
+        mime,
+        base64: encode_base64(&bytes),
+    }))
+}
+
+fn mime_for_picked(name: &str, kind: &str) -> String {
+    let ext = name.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
+    match ext.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "bmp" => "image/bmp",
+        _ if kind == "image" => "image/jpeg",
+        _ => "application/octet-stream",
+    }
+    .to_string()
+}
+
+fn encode_base64(data: &[u8]) -> String {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
+    let mut i = 0;
+    while i + 3 <= data.len() {
+        let n = ((data[i] as u32) << 16) | ((data[i + 1] as u32) << 8) | (data[i + 2] as u32);
+        out.push(TABLE[((n >> 18) & 63) as usize] as char);
+        out.push(TABLE[((n >> 12) & 63) as usize] as char);
+        out.push(TABLE[((n >> 6) & 63) as usize] as char);
+        out.push(TABLE[(n & 63) as usize] as char);
+        i += 3;
+    }
+    match data.len() - i {
+        1 => {
+            let n = (data[i] as u32) << 16;
+            out.push(TABLE[((n >> 18) & 63) as usize] as char);
+            out.push(TABLE[((n >> 12) & 63) as usize] as char);
+            out.push('=');
+            out.push('=');
+        }
+        2 => {
+            let n = ((data[i] as u32) << 16) | ((data[i + 1] as u32) << 8);
+            out.push(TABLE[((n >> 18) & 63) as usize] as char);
+            out.push(TABLE[((n >> 12) & 63) as usize] as char);
+            out.push(TABLE[((n >> 6) & 63) as usize] as char);
+            out.push('=');
+        }
+        _ => {}
+    }
+    out
+}
+
+#[cfg(windows)]
+fn pick_unparented_file(kind: &str) -> Result<Option<std::path::PathBuf>, String> {
+    #[link(name = "comdlg32")]
+    extern "system" {
+        fn GetOpenFileNameW(ofn: *mut OpenFileNameW) -> i32;
+    }
+    #[repr(C)]
+    struct OpenFileNameW {
+        l_struct_size: u32,
+        hwnd_owner: isize,
+        h_instance: isize,
+        lpstr_filter: *const u16,
+        lpstr_custom_filter: *mut u16,
+        n_max_cust_filter: u32,
+        n_filter_index: u32,
+        lpstr_file: *mut u16,
+        n_max_file: u32,
+        lpstr_file_title: *mut u16,
+        n_max_file_title: u32,
+        lpstr_initial_dir: *const u16,
+        lpstr_title: *const u16,
+        flags: u32,
+        n_file_offset: u16,
+        n_file_extension: u16,
+        lpstr_def_ext: *const u16,
+        l_cust_data: isize,
+        lpfn_hook: isize,
+        lp_template_name: *const u16,
+        pv_reserved: *mut std::ffi::c_void,
+        dw_reserved: u32,
+        flags_ex: u32,
+    }
+    const OFN_PATHMUSTEXIST: u32 = 0x0000_0800;
+    const OFN_FILEMUSTEXIST: u32 = 0x0000_1000;
+    const OFN_EXPLORER: u32 = 0x0008_0000;
+    const OFN_NOCHANGEDIR: u32 = 0x0000_0008;
+
+    let filter = if kind == "image" {
+        wide_z("이미지\0*.png;*.jpg;*.jpeg;*.gif;*.webp;*.bmp\0모든 파일\0*.*\0")
+    } else {
+        wide_z("모든 파일\0*.*\0")
+    };
+    let title = wide_z(if kind == "image" { "사진 선택\0" } else { "파일 선택\0" });
+    let mut file = vec![0u16; 2048];
+    let mut ofn = OpenFileNameW {
+        l_struct_size: 0,
+        hwnd_owner: 0,
+        h_instance: 0,
+        lpstr_filter: filter.as_ptr(),
+        lpstr_custom_filter: std::ptr::null_mut(),
+        n_max_cust_filter: 0,
+        n_filter_index: 1,
+        lpstr_file: file.as_mut_ptr(),
+        n_max_file: file.len() as u32,
+        lpstr_file_title: std::ptr::null_mut(),
+        n_max_file_title: 0,
+        lpstr_initial_dir: std::ptr::null(),
+        lpstr_title: title.as_ptr(),
+        flags: OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR,
+        n_file_offset: 0,
+        n_file_extension: 0,
+        lpstr_def_ext: std::ptr::null(),
+        l_cust_data: 0,
+        lpfn_hook: 0,
+        lp_template_name: std::ptr::null(),
+        pv_reserved: std::ptr::null_mut(),
+        dw_reserved: 0,
+        flags_ex: 0,
+    };
+    ofn.l_struct_size = std::mem::size_of::<OpenFileNameW>() as u32;
+    let ok = unsafe { GetOpenFileNameW(&mut ofn) };
+    if ok == 0 {
+        return Ok(None);
+    }
+    let end = file.iter().position(|c| *c == 0).unwrap_or(file.len());
+    let text = String::from_utf16_lossy(&file[..end]);
+    if text.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(std::path::PathBuf::from(text)))
+}
+
+#[cfg(windows)]
+fn wide_z(text: &str) -> Vec<u16> {
+    text.encode_utf16().chain(std::iter::once(0)).collect()
+}
+
+#[cfg(not(windows))]
+fn pick_unparented_file(_kind: &str) -> Result<Option<std::path::PathBuf>, String> {
+    Err("html-picker".into())
+}
+
+struct OverlayDialogGuard<'a> {
+    app: &'a AppHandle,
+    cursor_bumps: i32,
+}
+
+impl<'a> OverlayDialogGuard<'a> {
+    fn enter(app: &'a AppHandle) -> Self {
+        FILE_DIALOG_OPEN.store(true, Ordering::SeqCst);
+        if let Some(overlay) = app.get_webview_window("overlay") {
+            let _ = overlay.set_always_on_top(false);
+            let _ = overlay.set_ignore_cursor_events(false);
+            CLICK_THROUGH.store(0, Ordering::SeqCst);
+        }
+        Self {
+            app,
+            cursor_bumps: reveal_cursor(),
+        }
+    }
+}
+
+impl Drop for OverlayDialogGuard<'_> {
+    fn drop(&mut self) {
+        conceal_cursor(self.cursor_bumps);
+        FILE_DIALOG_OPEN.store(false, Ordering::SeqCst);
+        if !OVERLAY_USER_VISIBLE.load(Ordering::SeqCst) || YIELD_STATE.load(Ordering::SeqCst) != 0 {
+            return;
+        }
+        if let Some(overlay) = self.app.get_webview_window("overlay") {
+            let _ = overlay.set_always_on_top(true);
+            LAST_Z_PROMOTE_MS.store(0, Ordering::SeqCst);
+            promote_overlay_zorder(&overlay);
+            let _ = overlay.set_ignore_cursor_events(true);
+            CLICK_THROUGH.store(1, Ordering::SeqCst);
+        }
+    }
+}
+
+#[cfg(windows)]
+fn reveal_cursor() -> i32 {
+    #[link(name = "user32")]
+    extern "system" {
+        fn ShowCursor(show: i32) -> i32;
+    }
+    let mut bumps = 0;
+    unsafe {
+        let mut count = ShowCursor(1);
+        bumps += 1;
+        while count < 0 && bumps < 32 {
+            count = ShowCursor(1);
+            bumps += 1;
+        }
+    }
+    bumps
+}
+
+#[cfg(windows)]
+fn conceal_cursor(bumps: i32) {
+    #[link(name = "user32")]
+    extern "system" {
+        fn ShowCursor(show: i32) -> i32;
+    }
+    unsafe {
+        for _ in 0..bumps {
+            ShowCursor(0);
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn reveal_cursor() -> i32 {
+    0
+}
+
+#[cfg(not(windows))]
+fn conceal_cursor(_bumps: i32) {}
 
 fn restore_overlay_topmost(app: &AppHandle) {
     if !OVERLAY_USER_VISIBLE.load(Ordering::SeqCst) {
@@ -465,6 +728,9 @@ fn promote_overlay_zorder(overlay: &tauri::WebviewWindow) {
 }
 /// 캡처 세션 중 강제 표시 (양보 상태와 무관하게 show + topmost)
 fn force_overlay_visible_for_capture(app: &AppHandle) {
+    if FILE_DIALOG_OPEN.load(Ordering::SeqCst) {
+        return;
+    }
     YIELD_STATE.store(0, Ordering::SeqCst);
     IN_REGION_SELECT.store(true, Ordering::SeqCst);
     if !OVERLAY_USER_VISIBLE.load(Ordering::SeqCst) {
@@ -746,6 +1012,7 @@ fn spawn_capture_yield_watcher(app: AppHandle) {
                 }
                 if OVERLAY_USER_VISIBLE.load(Ordering::SeqCst)
                     && YIELD_STATE.load(Ordering::SeqCst) == 0
+                    && !FILE_DIALOG_OPEN.load(Ordering::SeqCst)
                     && last_topmost_refresh.elapsed() >= Duration::from_secs(2)
                 {
                     last_topmost_refresh = Instant::now();
@@ -795,7 +1062,8 @@ pub fn run() {
             is_capture_freeze,
             get_click_debug,
             open_devtools,
-            force_overlay_interactive
+            force_overlay_interactive,
+            pick_chat_file
         ])
         .setup(|app| {
             #[cfg(desktop)]
