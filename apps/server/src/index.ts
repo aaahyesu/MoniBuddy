@@ -330,6 +330,15 @@ io.on("connection", (socket) => {
   socket.on(SocketEvents.LadderCancel, (payload, ack) => {
     games.cancelLadder(socket, payload, ack);
   });
+  socket.on(SocketEvents.RouletteOpen, (payload, ack) => {
+    games.openRoulette(socket, payload, ack);
+  });
+  socket.on(SocketEvents.RouletteSpin, (payload, ack) => {
+    games.spinRoulette(socket, payload ?? { slots: [] }, ack);
+  });
+  socket.on(SocketEvents.RouletteCancel, (payload, ack) => {
+    games.cancelRoulette(socket, payload, ack);
+  });
 
   socket.on(SocketEvents.RoomCreate, async (payload: RoomCreatePayload, ack?: (r: RoomCreateAck) => void) => {
     try {
