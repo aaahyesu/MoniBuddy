@@ -310,6 +310,18 @@ export function App() {
         }
         if (action.type === "ladder-cancel") {
           room.cancelLadder();
+          return;
+        }
+        if (action.type === "roulette-open") {
+          room.openRoulette();
+          return;
+        }
+        if (action.type === "roulette-spin") {
+          room.spinRoulette(action.slots);
+          return;
+        }
+        if (action.type === "roulette-cancel") {
+          room.cancelRoulette();
         }
       } catch {
         /* ignore */
@@ -323,7 +335,7 @@ export function App() {
       window.removeEventListener("storage", flush);
       window.clearInterval(id);
     };
-  }, [room.passBomb, room.openLadder, room.startLadder, room.cancelLadder]);
+  }, [room.passBomb, room.openLadder, room.startLadder, room.cancelLadder, room.openRoulette, room.spinRoulette, room.cancelRoulette]);
 
   // Overlay + menu → create / join / leave room
   useEffect(() => {
@@ -386,6 +398,7 @@ export function App() {
       statusMessage: profile.statusMessage || "",
       bomb: room.bomb,
       ladder: room.ladder,
+      roulette: room.roulette,
       bombExplode: room.bombExplode,
     };
     try {
@@ -418,6 +431,7 @@ export function App() {
     room.roomCode,
     room.bomb,
     room.ladder,
+    room.roulette,
     room.bombExplode,
     profile.serverUrl,
     profile.nickname,

@@ -1795,8 +1795,216 @@
   cursor: not-allowed;
 }
 .ladder-panel.wait {
+  width: max-content;
+  max-width: min(420px, calc(100vw - 24px));
+  pointer-events: none;
   text-align: center;
   padding: 24px 16px;
+}
+.roulette-panel {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  z-index: 110;
+  transform: translate(-50%, -50%);
+  width: min(420px, calc(100vw - 24px));
+  max-height: min(82vh, 620px);
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 14px 12px;
+  border: 2px solid #fff;
+  border-radius: 0;
+  background:
+    radial-gradient(1px 1px at 12% 16%, rgba(255, 255, 255, 0.8) 0, transparent 100%),
+    radial-gradient(1px 1px at 78% 28%, rgba(255, 255, 255, 0.55) 0, transparent 100%),
+    radial-gradient(1px 1px at 40% 78%, rgba(255, 255, 255, 0.4) 0, transparent 100%),
+    rgba(0, 0, 0, 0.94);
+  color: #fff;
+  box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.55);
+  font-family: var(--font-pixel), "Galmuri11", monospace;
+  pointer-events: auto;
+}
+.roulette-panel.reveal {
+  overflow: hidden;
+  max-height: none;
+}
+.roulette-panel.wait {
+  width: max-content;
+  max-width: min(420px, calc(100vw - 24px));
+  pointer-events: none;
+  text-align: center;
+}
+.roulette-panel.wait strong {
+  color: #55ddff;
+}
+.roulette-head {
+  padding-bottom: 8px;
+  border-bottom: 2px solid #fff;
+}
+.roulette-brand {
+  margin: 0 0 2px;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: #55ddff;
+}
+.roulette-panel h3 {
+  margin: 0 0 4px;
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
+}
+.roulette-hint {
+  margin: 0;
+  font-size: 11px;
+  color: #d7d7d7;
+}
+.roulette-count {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  font-weight: 700;
+}
+.roulette-count span {
+  min-width: 3.2em;
+  text-align: center;
+  color: #ffe14d;
+}
+.roulette-panel button {
+  appearance: none;
+  border: 2px solid #fff;
+  border-radius: 0;
+  background: #000;
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  box-shadow: 2px 2px 0 #000;
+  cursor: pointer;
+}
+.roulette-panel button:active:not(:disabled) {
+  transform: translate(1px, 1px);
+  box-shadow: none;
+}
+.roulette-panel button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.roulette-count button {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  line-height: 1;
+}
+.roulette-slots {
+  display: grid;
+  gap: 6px;
+}
+.roulette-slots label {
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  align-items: center;
+  gap: 6px;
+}
+.roulette-slot-no {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 2px solid #fff;
+  background: #000;
+  color: #ffe14d;
+  font-size: 11px;
+  font-weight: 700;
+}
+.roulette-slots input {
+  border: 2px solid #fff;
+  border-radius: 0;
+  background: #000;
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  padding: 4px 8px;
+  outline: none;
+}
+.roulette-slots input::placeholder {
+  color: #8d8d8d;
+}
+.roulette-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.roulette-actions .ghost {
+  background: transparent;
+  color: #fff;
+}
+.roulette-panel button.primary,
+.roulette-actions .primary {
+  background: #ffe14d;
+  color: #1c2430;
+  border-color: #1c2430;
+  align-self: flex-end;
+}
+.roulette-stage {
+  position: relative;
+  flex: 0 0 auto;
+  width: min(280px, 72vw);
+  margin: 2px auto 0;
+  padding-top: 20px;
+  overflow: hidden;
+}
+.roulette-pointer-px {
+  position: absolute;
+  left: 50%;
+  top: 2px;
+  z-index: 2;
+  width: 44px;
+  height: 28px;
+  transform: translateX(-50%);
+  image-rendering: pixelated;
+  pointer-events: none;
+}
+.roulette-rotor {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  transform-origin: 50% 50%;
+  backface-visibility: hidden;
+}
+.roulette-wheel {
+  width: 100%;
+  height: 100%;
+  display: block;
+  overflow: visible;
+  shape-rendering: geometricPrecision;
+}
+.roulette-wheel text {
+  font-family: var(--font-pixel), "Galmuri11", monospace;
+  pointer-events: none;
+  user-select: none;
+}
+.roulette-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 36px;
+}
+.roulette-foot[data-empty="1"] {
+  visibility: hidden;
+}
+.roulette-result {
+  margin: 0;
+  padding: 4px 10px;
+  border: 2px solid #1c2430;
+  background: #ffe14d;
+  color: #1c2430;
+  font-size: 16px;
+  font-weight: 700;
+  box-shadow: 2px 2px 0 #000;
 }
 .ladder-board {
   display: flex;

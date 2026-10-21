@@ -117,11 +117,15 @@ export type GamePendingAction =
       at: number;
     }
   | { type: "ladder-cancel"; at: number }
-  | { type: "ladder-open"; at: number };
+  | { type: "ladder-open"; at: number }
+  | { type: "roulette-open"; at: number }
+  | { type: "roulette-spin"; slots: string[]; at: number }
+  | { type: "roulette-cancel"; at: number };
 
 export type GameBridgeState = {
   bomb: import("@monibuddy/shared").BombState | null;
   ladder: import("@monibuddy/shared").LadderState | null;
+  roulette: import("@monibuddy/shared").RouletteState | null;
   bombExplode: import("@monibuddy/shared").BombExplodePayload | null;
   at: number;
 };

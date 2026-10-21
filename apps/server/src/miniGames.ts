@@ -10,7 +10,12 @@ import {
   type LadderStartPayload,
   type LadderState,
   type Member,
+  type RouletteAck,
+  type RouletteSpinPayload,
+  type RouletteState,
   SocketEvents,
+  ROULETTE_MAX_SLOTS,
+  ROULETTE_MIN_SLOTS,
   generateLadderRungs,
   nicknamesEqual,
   resolveLadderPaths,
@@ -24,6 +29,8 @@ export type GameRoom = {
   bomb?: BombState;
   bombTimer?: ReturnType<typeof setTimeout>;
   ladder?: LadderState;
+  roulette?: RouletteState;
+  rouletteTimer?: ReturnType<typeof setTimeout>;
 };
 
 function memberByNick(room: GameRoom, nick: string): Member | undefined {
@@ -300,12 +307,147 @@ export function attachMiniGames(
     });
   };
 
+  const openRoulette = (
+    socket: Socket,
+    _payload?: unknown,
+    ack?: (r: RouletteAck) => void,
+  ) => {
+    const code = getRoomCode(socket.id);
+    if (!code) {
+      ack?.({ ok: false, error: "not in room" });
+      return;
+    }
+    const room = rooms.get(code);
+    if (!room) {
+      ack?.({ ok: false, error: "room not found" });
+      return;
+    }
+    const memberId = room.socketToMember.get(socket.id);
+    const member = memberId ? room.members.get(memberId) : undefined;
+    if (!member) {
+      ack?.({ ok: false, error: "not a member" });
+      return;
+    }
+    if (room.roulette && room.roulette.phase !== "done") {
+      ack?.({ ok: false, error: "이미 룰렛이 진행 중이에요" });
+      return;
+    }
+    if (room.rouletteTimer) {
+      clearTimeout(room.rouletteTimer);
+      room.rouletteTimer = undefined;
+    }
+    const roulette: RouletteState = {
+      hostMemberId: member.id,
+      hostNickname: member.nickname,
+      slots: [],
+      winnerIndex: 0,
+      stopAngle: 0,
+      phase: "setup",
+    };
+    room.roulette = roulette;
+    io.to(code).emit(SocketEvents.RouletteSync, roulette);
+    ack?.({ ok: true, roulette });
+  };
+
+  const spinRoulette = (
+    socket: Socket,
+    payload: RouletteSpinPayload,
+    ack?: (r: RouletteAck) => void,
+  ) => {
+    const code = getRoomCode(socket.id);
+    if (!code) {
+      ack?.({ ok: false, error: "not in room" });
+      return;
+    }
+    const room = rooms.get(code);
+    if (!room?.roulette || room.roulette.phase !== "setup") {
+      ack?.({ ok: false, error: "룰렛 설정 중이 아니에요" });
+      return;
+    }
+    const memberId = room.socketToMember.get(socket.id);
+    if (!memberId || memberId !== room.roulette.hostMemberId) {
+      ack?.({ ok: false, error: "주최자만 돌릴 수 있어요" });
+      return;
+    }
+    const raw = Array.isArray(payload?.slots) ? payload.slots : [];
+    const slots = raw
+      .map((s, i) => String(s ?? "").trim().slice(0, 16) || `칸 ${i + 1}`)
+      .slice(0, ROULETTE_MAX_SLOTS);
+    if (slots.length < ROULETTE_MIN_SLOTS) {
+      ack?.({ ok: false, error: "칸은 2개 이상이어야 해요" });
+      return;
+    }
+    const winnerIndex = Math.floor(Math.random() * slots.length);
+    const slice = 360 / slots.length;
+    const center = (winnerIndex + 0.5) * slice;
+    const stopAngle = 360 * 5 + (360 - center);
+    const roulette: RouletteState = {
+      ...room.roulette,
+      slots,
+      winnerIndex,
+      stopAngle,
+      phase: "spinning",
+    };
+    room.roulette = roulette;
+    io.to(code).emit(SocketEvents.RouletteSync, roulette);
+    if (room.rouletteTimer) clearTimeout(room.rouletteTimer);
+    room.rouletteTimer = setTimeout(() => {
+      const r = rooms.get(code);
+      if (!r?.roulette || r.roulette.phase !== "spinning") return;
+      r.roulette = { ...r.roulette, phase: "done" };
+      io.to(code).emit(SocketEvents.RouletteSync, r.roulette);
+    }, 4400);
+    ack?.({ ok: true, roulette });
+  };
+
+  const cancelRoulette = (
+    socket: Socket,
+    _payload?: unknown,
+    ack?: (r: RouletteAck) => void,
+  ) => {
+    const code = getRoomCode(socket.id);
+    if (!code) {
+      ack?.({ ok: false, error: "not in room" });
+      return;
+    }
+    const room = rooms.get(code);
+    if (!room?.roulette) {
+      ack?.({ ok: false, error: "룰렛이 없어요" });
+      return;
+    }
+    const memberId = room.socketToMember.get(socket.id);
+    if (!memberId || memberId !== room.roulette.hostMemberId) {
+      ack?.({ ok: false, error: "주최자만 취소할 수 있어요" });
+      return;
+    }
+    if (room.rouletteTimer) {
+      clearTimeout(room.rouletteTimer);
+      room.rouletteTimer = undefined;
+    }
+    room.roulette = undefined;
+    io.to(code).emit(SocketEvents.RouletteCancel, { at: Date.now() });
+    ack?.({
+      ok: true,
+      roulette: {
+        hostMemberId: memberId,
+        hostNickname: "",
+        slots: [],
+        winnerIndex: 0,
+        stopAngle: 0,
+        phase: "done",
+      },
+    });
+  };
+
   return {
     startBomb,
     passBomb,
     openLadder,
     startLadder,
     cancelLadder,
+    openRoulette,
+    spinRoulette,
+    cancelRoulette,
     clearBombOnRoomEmpty(code: string) {
       const room = rooms.get(code);
       if (room) clearBomb(room);
@@ -340,6 +482,10 @@ export function attachMiniGames(
       }
       if (/^\/(?:사다리|ladder)\s*$/i.test(t)) {
         openLadder(socket);
+        return true;
+      }
+      if (/^\/(?:룰렛|roulette)\s*$/i.test(t)) {
+        openRoulette(socket);
         return true;
       }
       return false;

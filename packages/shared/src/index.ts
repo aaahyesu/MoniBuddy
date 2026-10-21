@@ -269,13 +269,18 @@ export function isLadderChatDraft(raw: string): boolean {
   return /^\/(?:사다리|ladder)(\s|$)/i.test(String(raw ?? "").trim());
 }
 
+export function isRouletteChatDraft(raw: string): boolean {
+  return /^\/(?:룰렛|roulette)(\s|$)/i.test(String(raw ?? "").trim());
+}
+
 export type MiniGameParse =
   | { kind: "bomb-start"; seconds: number; random: boolean }
   | { kind: "bomb-pass"; targetNickname?: string; random: boolean }
   | { kind: "ladder-open" }
+  | { kind: "roulette-open" }
   | { kind: "none" };
 
-/** `/폭탄 30` · `/폭탄 랜덤` · `/폭탄 넘겨 [닉]` · `/사다리` */
+/** `/폭탄 30` · `/폭탄 랜덤` · `/폭탄 넘겨 [닉]` · `/사다리` · `/룰렛` */
 export function parseMiniGameChat(raw: string): MiniGameParse {
   const trimmed = String(raw ?? "").trim().normalize("NFC");
   const bombRandom = trimmed.match(/^\/(?:폭탄|bomb)\s+(?:랜덤|random)\s*$/i);
@@ -302,6 +307,9 @@ export function parseMiniGameChat(raw: string): MiniGameParse {
   }
   if (/^\/(?:사다리|ladder)\s*$/i.test(trimmed)) {
     return { kind: "ladder-open" };
+  }
+  if (/^\/(?:룰렛|roulette)\s*$/i.test(trimmed)) {
+    return { kind: "roulette-open" };
   }
   return { kind: "none" };
 }
@@ -350,6 +358,25 @@ export type LadderStartPayload = {
 
 export type LadderAck =
   | { ok: true; ladder: LadderState }
+  | { ok: false; error: string };
+
+export const ROULETTE_MIN_SLOTS = 2;
+export const ROULETTE_MAX_SLOTS = 8;
+
+export type RouletteState = {
+  hostMemberId: string;
+  hostNickname: string;
+  slots: string[];
+  winnerIndex: number;
+  /** 포인터(위)에 당첨 칸 중심이 오도록 한 바퀴 각도. 여러 바퀴 포함 */
+  stopAngle: number;
+  phase: "setup" | "spinning" | "done";
+};
+
+export type RouletteSpinPayload = { slots: string[] };
+
+export type RouletteAck =
+  | { ok: true; roulette: RouletteState }
   | { ok: false; error: string };
 
 /** rungs[row][gap] = true → gap와 gap+1 열을 가로로 연결.
@@ -499,6 +526,10 @@ export const SocketEvents = {
   LadderStart: "ladder:start",
   LadderSync: "ladder:sync",
   LadderCancel: "ladder:cancel",
+  RouletteOpen: "roulette:open",
+  RouletteSpin: "roulette:spin",
+  RouletteSync: "roulette:sync",
+  RouletteCancel: "roulette:cancel",
 } as const;
 
 export type FriendGroup = {

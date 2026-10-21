@@ -18,6 +18,7 @@ import {
   type BombState,
   type BombExplodePayload,
   type LadderState,
+  type RouletteState,
   SocketEvents,
   defaultCharState,
   nicknamesEqual,
@@ -72,6 +73,7 @@ export function useRoomSocket(opts: Options) {
     null,
   );
   const [ladder, setLadder] = useState<LadderState | null>(null);
+  const [roulette, setRoulette] = useState<RouletteState | null>(null);
   const bombRef = useRef<BombState | null>(null);
   const seenIds = useRef(new Set<string>());
   const optsRef = useRef(opts);
@@ -366,6 +368,12 @@ export function useRoomSocket(opts: Options) {
       const onLadderCancel = () => {
         setLadder(null);
       };
+      const onRouletteSync = (state: RouletteState) => {
+        setRoulette(state);
+      };
+      const onRouletteCancel = () => {
+        setRoulette(null);
+      };
 
       socket.on("connect", onConnect);
       socket.on("disconnect", onDisconnect);
@@ -381,6 +389,8 @@ export function useRoomSocket(opts: Options) {
       socket.on(SocketEvents.BombExplode, onBombExplode);
       socket.on(SocketEvents.LadderSync, onLadderSync);
       socket.on(SocketEvents.LadderCancel, onLadderCancel);
+      socket.on(SocketEvents.RouletteSync, onRouletteSync);
+      socket.on(SocketEvents.RouletteCancel, onRouletteCancel);
     };
 
     void connect();
@@ -522,16 +532,29 @@ export function useRoomSocket(opts: Options) {
     socketRef.current?.emit(SocketEvents.LadderCancel);
   }, []);
 
+  const openRoulette = useCallback(() => {
+    socketRef.current?.emit(SocketEvents.RouletteOpen);
+  }, []);
+
+  const spinRoulette = useCallback((slots: string[]) => {
+    socketRef.current?.emit(SocketEvents.RouletteSpin, { slots });
+  }, []);
+
+  const cancelRoulette = useCallback(() => {
+    socketRef.current?.emit(SocketEvents.RouletteCancel);
+  }, []);
+
   const clearBombExplode = useCallback(() => setBombExplode(null), []);
 
   useEffect(() => {
     writeGameState({
       bomb,
       ladder,
+      roulette,
       bombExplode,
       at: Date.now(),
     });
-  }, [bomb, ladder, bombExplode]);
+  }, [bomb, ladder, roulette, bombExplode]);
 
   useEffect(() => {
     if (!bombExplode) return;
@@ -852,6 +875,7 @@ export function useRoomSocket(opts: Options) {
     bomb,
     bombExplode,
     ladder,
+    roulette,
     createRoom,
     joinRoom,
     leaveRoom,
@@ -873,6 +897,9 @@ export function useRoomSocket(opts: Options) {
     openLadder,
     startLadder,
     cancelLadder,
+    openRoulette,
+    spinRoulette,
+    cancelRoulette,
     clearBombExplode,
   };
 }
