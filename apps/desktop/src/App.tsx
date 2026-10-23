@@ -322,6 +322,38 @@ export function App() {
         }
         if (action.type === "roulette-cancel") {
           room.cancelRoulette();
+          return;
+        }
+        if (action.type === "sketch-open") {
+          room.openSketch(action.rounds);
+          return;
+        }
+        if (action.type === "sketch-vote") {
+          room.voteSketch(action.vote);
+          return;
+        }
+        if (action.type === "sketch-category") {
+          room.setSketchCategory(action.categoryId);
+          return;
+        }
+        if (action.type === "sketch-start") {
+          room.startSketch(action.categoryId);
+          return;
+        }
+        if (action.type === "sketch-stroke") {
+          room.strokeSketch(action.stroke);
+          return;
+        }
+        if (action.type === "sketch-clear") {
+          room.clearSketchBoard();
+          return;
+        }
+        if (action.type === "sketch-reveal") {
+          room.revealSketch();
+          return;
+        }
+        if (action.type === "sketch-cancel") {
+          room.cancelSketch();
         }
       } catch {
         /* ignore */
@@ -335,7 +367,23 @@ export function App() {
       window.removeEventListener("storage", flush);
       window.clearInterval(id);
     };
-  }, [room.passBomb, room.openLadder, room.startLadder, room.cancelLadder, room.openRoulette, room.spinRoulette, room.cancelRoulette]);
+  }, [
+    room.passBomb,
+    room.openLadder,
+    room.startLadder,
+    room.cancelLadder,
+    room.openRoulette,
+    room.spinRoulette,
+    room.cancelRoulette,
+    room.openSketch,
+    room.voteSketch,
+    room.setSketchCategory,
+    room.startSketch,
+    room.strokeSketch,
+    room.clearSketchBoard,
+    room.revealSketch,
+    room.cancelSketch,
+  ]);
 
   // Overlay + menu → create / join / leave room
   useEffect(() => {
@@ -399,6 +447,7 @@ export function App() {
       bomb: room.bomb,
       ladder: room.ladder,
       roulette: room.roulette,
+      sketch: room.sketch,
       bombExplode: room.bombExplode,
     };
     try {
@@ -432,6 +481,7 @@ export function App() {
     room.bomb,
     room.ladder,
     room.roulette,
+    room.sketch,
     room.bombExplode,
     profile.serverUrl,
     profile.nickname,

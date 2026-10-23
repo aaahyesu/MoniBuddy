@@ -19,6 +19,10 @@ import {
   type BombExplodePayload,
   type LadderState,
   type RouletteState,
+  type SketchCategoryId,
+  type SketchState,
+  type SketchStroke,
+  type SketchVote,
   SocketEvents,
   defaultCharState,
   nicknamesEqual,
@@ -74,6 +78,7 @@ export function useRoomSocket(opts: Options) {
   );
   const [ladder, setLadder] = useState<LadderState | null>(null);
   const [roulette, setRoulette] = useState<RouletteState | null>(null);
+  const [sketch, setSketch] = useState<SketchState | null>(null);
   const bombRef = useRef<BombState | null>(null);
   const seenIds = useRef(new Set<string>());
   const optsRef = useRef(opts);
@@ -374,6 +379,12 @@ export function useRoomSocket(opts: Options) {
       const onRouletteCancel = () => {
         setRoulette(null);
       };
+      const onSketchSync = (state: SketchState) => {
+        setSketch(state);
+      };
+      const onSketchCancel = () => {
+        setSketch(null);
+      };
 
       socket.on("connect", onConnect);
       socket.on("disconnect", onDisconnect);
@@ -391,6 +402,8 @@ export function useRoomSocket(opts: Options) {
       socket.on(SocketEvents.LadderCancel, onLadderCancel);
       socket.on(SocketEvents.RouletteSync, onRouletteSync);
       socket.on(SocketEvents.RouletteCancel, onRouletteCancel);
+      socket.on(SocketEvents.SketchSync, onSketchSync);
+      socket.on(SocketEvents.SketchCancel, onSketchCancel);
     };
 
     void connect();
@@ -500,6 +513,8 @@ export function useRoomSocket(opts: Options) {
     setBomb(null);
     setBombExplode(null);
     setLadder(null);
+    setRoulette(null);
+    setSketch(null);
     seenIds.current.clear();
   }, []);
 
@@ -544,6 +559,38 @@ export function useRoomSocket(opts: Options) {
     socketRef.current?.emit(SocketEvents.RouletteCancel);
   }, []);
 
+  const openSketch = useCallback((rounds: number) => {
+    socketRef.current?.emit(SocketEvents.SketchOpen, { rounds });
+  }, []);
+
+  const voteSketch = useCallback((vote: SketchVote) => {
+    socketRef.current?.emit(SocketEvents.SketchVote, { vote });
+  }, []);
+
+  const setSketchCategory = useCallback((categoryId: SketchCategoryId) => {
+    socketRef.current?.emit(SocketEvents.SketchCategory, { categoryId });
+  }, []);
+
+  const startSketch = useCallback((categoryId: SketchCategoryId) => {
+    socketRef.current?.emit(SocketEvents.SketchStart, { categoryId });
+  }, []);
+
+  const strokeSketch = useCallback((stroke: SketchStroke) => {
+    socketRef.current?.emit(SocketEvents.SketchStroke, { stroke });
+  }, []);
+
+  const clearSketchBoard = useCallback(() => {
+    socketRef.current?.emit(SocketEvents.SketchClear);
+  }, []);
+
+  const revealSketch = useCallback(() => {
+    socketRef.current?.emit(SocketEvents.SketchReveal);
+  }, []);
+
+  const cancelSketch = useCallback(() => {
+    socketRef.current?.emit(SocketEvents.SketchCancel);
+  }, []);
+
   const clearBombExplode = useCallback(() => setBombExplode(null), []);
 
   useEffect(() => {
@@ -551,10 +598,11 @@ export function useRoomSocket(opts: Options) {
       bomb,
       ladder,
       roulette,
+      sketch,
       bombExplode,
       at: Date.now(),
     });
-  }, [bomb, ladder, roulette, bombExplode]);
+  }, [bomb, ladder, roulette, sketch, bombExplode]);
 
   useEffect(() => {
     if (!bombExplode) return;
@@ -876,6 +924,7 @@ export function useRoomSocket(opts: Options) {
     bombExplode,
     ladder,
     roulette,
+    sketch,
     createRoom,
     joinRoom,
     leaveRoom,
@@ -900,6 +949,14 @@ export function useRoomSocket(opts: Options) {
     openRoulette,
     spinRoulette,
     cancelRoulette,
+    openSketch,
+    voteSketch,
+    setSketchCategory,
+    startSketch,
+    strokeSketch,
+    clearSketchBoard,
+    revealSketch,
+    cancelSketch,
     clearBombExplode,
   };
 }

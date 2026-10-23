@@ -120,12 +120,33 @@ export type GamePendingAction =
   | { type: "ladder-open"; at: number }
   | { type: "roulette-open"; at: number }
   | { type: "roulette-spin"; slots: string[]; at: number }
-  | { type: "roulette-cancel"; at: number };
+  | { type: "roulette-cancel"; at: number }
+  | { type: "sketch-open"; rounds: number; at: number }
+  | { type: "sketch-vote"; vote: "yes" | "no"; at: number }
+  | {
+      type: "sketch-category";
+      categoryId: import("@monibuddy/shared").SketchCategoryId;
+      at: number;
+    }
+  | {
+      type: "sketch-start";
+      categoryId: import("@monibuddy/shared").SketchCategoryId;
+      at: number;
+    }
+  | {
+      type: "sketch-stroke";
+      stroke: import("@monibuddy/shared").SketchStroke;
+      at: number;
+    }
+  | { type: "sketch-clear"; at: number }
+  | { type: "sketch-reveal"; at: number }
+  | { type: "sketch-cancel"; at: number };
 
 export type GameBridgeState = {
   bomb: import("@monibuddy/shared").BombState | null;
   ladder: import("@monibuddy/shared").LadderState | null;
   roulette: import("@monibuddy/shared").RouletteState | null;
+  sketch: import("@monibuddy/shared").SketchState | null;
   bombExplode: import("@monibuddy/shared").BombExplodePayload | null;
   at: number;
 };

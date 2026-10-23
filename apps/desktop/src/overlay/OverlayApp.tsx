@@ -15,6 +15,7 @@ import {
   isBombChatDraft,
   isLadderChatDraft,
   isRouletteChatDraft,
+  isSketchChatDraft,
   nicknamesEqual,
   parseEffectChat,
   parseLetterChat,
@@ -23,6 +24,7 @@ import {
   type BombState,
   type LadderState,
   type RouletteState,
+  type SketchState,
 } from "@monibuddy/shared";
 import { GuideSpotlight } from "../components/GuideSpotlight";
 import { ChatAttachmentsView } from "../components/ChatAttachmentsView";
@@ -50,6 +52,7 @@ import { BombBoom } from "./BombBoom";
 import { BombProp } from "./BombProp";
 import { LadderGame } from "./LadderGame";
 import { RouletteGame } from "./RouletteGame";
+import { SketchGame } from "./SketchGame";
 import {
   GAME_STATE_EVENT,
   GAME_STATE_KEY,
@@ -150,6 +153,7 @@ type Runtime = {
   bomb?: BombState | null;
   ladder?: LadderState | null;
   roulette?: RouletteState | null;
+  sketch?: SketchState | null;
   bombExplode?: BombExplodePayload | null;
 };
 
@@ -440,8 +444,11 @@ export function OverlayApp() {
   const [ladderDismissed, setLadderDismissed] = useState(false);
   const [roulette, setRoulette] = useState<RouletteState | null>(null);
   const [rouletteDismissed, setRouletteDismissed] = useState(false);
+  const [sketch, setSketch] = useState<SketchState | null>(null);
+  const [sketchDismissed, setSketchDismissed] = useState(false);
 
   const chatInputRef = useRef<HTMLInputElement>(null);
+  const sketchUiRef = useRef<HTMLDivElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingPickRef = useRef<AttachCommand | null>(null);
@@ -520,6 +527,8 @@ export function OverlayApp() {
       if (!g) {
         setBomb(null);
         setLadder(null);
+        setRoulette(null);
+        setSketch(null);
         // 폭발 연출 중이면 유지
         setBombExplode((prev) =>
           prev && Date.now() - prev.at < 3000 ? prev : null,
@@ -586,6 +595,35 @@ export function OverlayApp() {
           prev.slots.join("|") !== next.slots.join("|")
         ) {
           setRouletteDismissed(false);
+        }
+        return next;
+      });
+      setSketch((prev) => {
+        if (!g.sketch) return null;
+        const next = g.sketch;
+        const same =
+          prev &&
+          prev.phase === next.phase &&
+          prev.hostMemberId === next.hostMemberId &&
+          prev.roundIndex === next.roundIndex &&
+          prev.drawerMemberId === next.drawerMemberId &&
+          prev.topic === next.topic &&
+          prev.endsAt === next.endsAt &&
+          prev.categoryId === next.categoryId &&
+          prev.strokes.map((s) => s.id).join("|") ===
+            next.strokes.map((s) => s.id).join("|") &&
+          prev.votes.map((v) => `${v.memberId}:${v.vote}`).join("|") ===
+            next.votes.map((v) => `${v.memberId}:${v.vote}`).join("|") &&
+          prev.winnerMemberId === next.winnerMemberId &&
+          prev.endReason === next.endReason;
+        if (same) return prev;
+        if (
+          !prev ||
+          prev.phase !== next.phase ||
+          prev.hostMemberId !== next.hostMemberId ||
+          prev.roundIndex !== next.roundIndex
+        ) {
+          setSketchDismissed(false);
         }
         return next;
       });
@@ -822,7 +860,14 @@ export function OverlayApp() {
       setRoomCode(roomCode);
       setStatusMessage((profile.statusMessage || rt?.statusMessage || "").trim());
       // 미니게임: runtime이 설정↔오버레이 공통 경로 (gameState 키만으로는 놓칠 수 있음)
-      if (rt && ("ladder" in rt || "bomb" in rt || "bombExplode" in rt || "roulette" in rt)) {
+      if (
+        rt &&
+        ("ladder" in rt ||
+          "bomb" in rt ||
+          "bombExplode" in rt ||
+          "roulette" in rt ||
+          "sketch" in rt)
+      ) {
         setBomb((prev) => {
           if (rt.bombExplode) return null;
           if (rt.bomb && rt.bomb.endsAt <= Date.now()) return null;
@@ -881,6 +926,35 @@ export function OverlayApp() {
             prev.slots.join("|") !== next.slots.join("|")
           ) {
             setRouletteDismissed(false);
+          }
+          return next;
+        });
+        setSketch((prev) => {
+          const next = rt.sketch ?? null;
+          if (!next) return null;
+          const same =
+            prev &&
+            prev.phase === next.phase &&
+            prev.hostMemberId === next.hostMemberId &&
+            prev.roundIndex === next.roundIndex &&
+            prev.drawerMemberId === next.drawerMemberId &&
+            prev.topic === next.topic &&
+            prev.endsAt === next.endsAt &&
+            prev.categoryId === next.categoryId &&
+            prev.strokes.map((s) => s.id).join("|") ===
+              next.strokes.map((s) => s.id).join("|") &&
+            prev.votes.map((v) => `${v.memberId}:${v.vote}`).join("|") ===
+              next.votes.map((v) => `${v.memberId}:${v.vote}`).join("|") &&
+            prev.winnerMemberId === next.winnerMemberId &&
+            prev.endReason === next.endReason;
+          if (same) return prev;
+          if (
+            !prev ||
+            prev.phase !== next.phase ||
+            prev.hostMemberId !== next.hostMemberId ||
+            prev.roundIndex !== next.roundIndex
+          ) {
+            setSketchDismissed(false);
           }
           return next;
         });
@@ -1266,6 +1340,16 @@ export function OverlayApp() {
             cy <= h * 0.95 &&
             Math.abs(cx - w / 2) <= 140;
           const overEffectFull = effectHit === "full";
+          const sketchBox = sketchUiRef.current?.getBoundingClientRect();
+          const overSketchUi = Boolean(
+            sketchBox &&
+              sketchBox.width > 0 &&
+              sketchBox.height > 0 &&
+              cx >= sketchBox.left - 4 &&
+              cx <= sketchBox.right + 4 &&
+              cy >= sketchBox.top - 4 &&
+              cy <= sketchBox.bottom + 4,
+          );
           // 설정 창 가이드가 떠 있으면 무조건 클릭 통과 — 안 그러면
           // 풀스크린 오버레이가 설정 가이드 입력을 가로채 깜빡임/먹통 발생
           const capture = settingsGuidePassRef.current
@@ -1274,6 +1358,7 @@ export function OverlayApp() {
               overInvite ||
               overLetterIcon ||
               overEffectFull ||
+              overSketchUi ||
               overActor ||
               overChat ||
               overChatLog ||
@@ -1744,7 +1829,9 @@ export function OverlayApp() {
     if (mini.kind !== "none") {
       // React inRoom / runtime 동기 지연 대비 — 둘 중 하나라도 방이면 전송
       if (!looksInRoom) {
-        writeOverlayNotice("방에 들어간 뒤 /사다리 · /폭탄 · /룰렛 을 쓸 수 있어요");
+        writeOverlayNotice(
+          "방에 들어간 뒤 /사다리 · /폭탄 · /룰렛 · /스케치 를 쓸 수 있어요",
+        );
         return;
       }
       localStorage.setItem(
@@ -1757,6 +1844,13 @@ export function OverlayApp() {
       }
       if (mini.kind === "roulette-open") {
         writeGamePending({ type: "roulette-open", at: Date.now() });
+      }
+      if (mini.kind === "sketch-open") {
+        writeGamePending({
+          type: "sketch-open",
+          rounds: mini.rounds,
+          at: Date.now(),
+        });
       }
       setChat("");
       setPlusOpen(false);
@@ -1896,6 +1990,7 @@ export function OverlayApp() {
   bombHolderRef.current = bombIsHolder;
   const showLadder = Boolean(ladder && !ladderDismissed);
   const showRoulette = Boolean(roulette && !rouletteDismissed);
+  const showSketch = Boolean(sketch && !sketchDismissed);
   // 상대가 준비 중일 때는 대기 문구만 보이고, 화면 클릭은 통과시킨다.
   const ladderBlocksScreen = Boolean(
     showLadder &&
@@ -1911,6 +2006,7 @@ export function OverlayApp() {
         roulette.hostMemberId !== selfMemberId
       ),
   );
+  // 스케치는 full 금지 — sketchUiRef 영역만 폴링에서 capture
   // 폭탄 진행 중 전체 화면 캡처 금지 → 클릭 먹통 유발.
   // 홀더는 캐릭터 주변 hitPad 확장으로 처리.
   effectHitRef.current = activeEgg || ladderBlocksScreen || rouletteBlocksScreen
@@ -1932,6 +2028,7 @@ export function OverlayApp() {
   const bombDraft = composeMode === "chat" && isBombChatDraft(chat);
   const ladderDraft = composeMode === "chat" && isLadderChatDraft(chat);
   const rouletteDraft = composeMode === "chat" && isRouletteChatDraft(chat);
+  const sketchDraft = composeMode === "chat" && isSketchChatDraft(chat);
   const bombParse = bombDraft ? parseMiniGameChat(chat) : null;
   const letterCmdTip = letterDraft && !parseAttachCommand(chat)
     ? effectDraft?.targetNickname
@@ -1955,6 +2052,9 @@ export function OverlayApp() {
     : null;
   const ladderCmdTip = ladderDraft ? "참가자 사다리를 열어요" : null;
   const rouletteCmdTip = rouletteDraft ? "칸을 정하고 값을 적은 뒤 돌립니다" : null;
+  const sketchCmdTip = sketchDraft
+    ? "예: /스케치 또는 /스케치 5 (1~10판, 찬반 후 시작)"
+    : null;
   const bombCmdTip = bombDraft
     ? bombParse?.kind === "bomb-pass"
       ? "폭탄을 클릭하거나 /폭탄 넘겨 [닉] 으로 넘길 수 있어요"
@@ -1988,13 +2088,20 @@ export function OverlayApp() {
                 ? { title: "사다리", detail: ladderCmdTip }
                 : rouletteCmdTip
                   ? { title: "룰렛", detail: rouletteCmdTip }
-                  : { title: "명령", detail: "" };
+                  : sketchCmdTip
+                    ? { title: "스케치", detail: sketchCmdTip }
+                    : { title: "명령", detail: "" };
   // 대상이 잡히면 본문 유무와 관계없이 →닉 (전원은 대상 없을 때만)
   const targetHint = effectDraft?.targetNickname
     ? `→${effectDraft.targetNickname}`
     : "전원";
   const chatMaxLen =
-    letterDraft || eggDraft || bombDraft || ladderDraft || rouletteDraft
+    letterDraft ||
+    eggDraft ||
+    bombDraft ||
+    ladderDraft ||
+    rouletteDraft ||
+    sketchDraft
       ? MAX_CHAT_LENGTH + 40
       : composeMode === "status"
         ? 40
@@ -2186,6 +2293,43 @@ export function OverlayApp() {
             writeGamePending({ type: "roulette-cancel", at: Date.now() })
           }
           onDismiss={() => setRouletteDismissed(true)}
+        />
+      ) : null}
+      {showSketch && sketch ? (
+        <SketchGame
+          sketch={sketch}
+          selfMemberId={selfMemberId}
+          uiRef={sketchUiRef}
+          onVote={(vote) =>
+            writeGamePending({ type: "sketch-vote", vote, at: Date.now() })
+          }
+          onCategory={(categoryId) =>
+            writeGamePending({
+              type: "sketch-category",
+              categoryId,
+              at: Date.now(),
+            })
+          }
+          onStart={(categoryId) =>
+            writeGamePending({
+              type: "sketch-start",
+              categoryId,
+              at: Date.now(),
+            })
+          }
+          onStroke={(stroke) =>
+            writeGamePending({ type: "sketch-stroke", stroke, at: Date.now() })
+          }
+          onClear={() =>
+            writeGamePending({ type: "sketch-clear", at: Date.now() })
+          }
+          onReveal={() =>
+            writeGamePending({ type: "sketch-reveal", at: Date.now() })
+          }
+          onCancel={() =>
+            writeGamePending({ type: "sketch-cancel", at: Date.now() })
+          }
+          onDismiss={() => setSketchDismissed(true)}
         />
       ) : null}
       {actors.map(({ member, x, y, edge, facing, bubble, isSelf, pinned }) => {
@@ -2642,7 +2786,8 @@ export function OverlayApp() {
                 <p>
                   <strong>/편지</strong> · <strong>/계란</strong> · <strong>/사진</strong> ·{" "}
                   <strong>/링크</strong> · <strong>/파일</strong> · <strong>/폭탄</strong> ·{" "}
-                  <strong>/사다리</strong> · <strong>/룰렛</strong>
+                  <strong>/사다리</strong> · <strong>/룰렛</strong> ·{" "}
+                  <strong>/스케치</strong>
                 </p>
               )}
             </div>
@@ -2706,9 +2851,11 @@ export function OverlayApp() {
                           ? "/사다리"
                           : rouletteDraft
                             ? "/룰렛"
-                            : inRoom
-                              ? "메시지 · /편지 · /계란 · /폭탄 · /사다리 · /룰렛"
-                              : "혼잣말 · /편지 · /계란…"
+                            : sketchDraft
+                              ? "/스케치 3"
+                              : inRoom
+                                ? "메시지 · /편지 · /계란 · /폭탄 · /사다리 · /룰렛 · /스케치"
+                                : "혼잣말 · /편지 · /계란…"
               }
               onChange={(e) => setChat(e.target.value)}
               onKeyDown={(e) => {
@@ -2745,6 +2892,16 @@ export function OverlayApp() {
             {rouletteDraft && !letterDraft && !eggDraft && !bombDraft && !ladderDraft && (
               <span className="composer-letter-hint" aria-live="polite">
                 룰렛
+              </span>
+            )}
+            {sketchDraft &&
+              !letterDraft &&
+              !eggDraft &&
+              !bombDraft &&
+              !ladderDraft &&
+              !rouletteDraft && (
+              <span className="composer-letter-hint" aria-live="polite">
+                스케치
               </span>
             )}
             {composeMode === "status" && (

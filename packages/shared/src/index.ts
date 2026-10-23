@@ -273,14 +273,27 @@ export function isRouletteChatDraft(raw: string): boolean {
   return /^\/(?:룰렛|roulette)(\s|$)/i.test(String(raw ?? "").trim());
 }
 
+export function isSketchChatDraft(raw: string): boolean {
+  return /^\/(?:스케치|sketch)(\s|$)/i.test(String(raw ?? "").trim());
+}
+
 export type MiniGameParse =
   | { kind: "bomb-start"; seconds: number; random: boolean }
   | { kind: "bomb-pass"; targetNickname?: string; random: boolean }
   | { kind: "ladder-open" }
   | { kind: "roulette-open" }
+  | { kind: "sketch-open"; rounds: number }
   | { kind: "none" };
 
-/** `/폭탄 30` · `/폭탄 랜덤` · `/폭탄 넘겨 [닉]` · `/사다리` · `/룰렛` */
+export const SKETCH_MIN_ROUNDS = 1;
+export const SKETCH_MAX_ROUNDS = 10;
+export const SKETCH_DEFAULT_ROUNDS = 3;
+export const SKETCH_ROUND_MS = 180_000;
+export const SKETCH_REVEAL_MS = 2500;
+/** 혼자 테스트도 가능하도록 1명. 여러 명이면 투표로 골라 참가 */
+export const SKETCH_MIN_YES = 1;
+
+/** `/폭탄 30` · `/폭탄 랜덤` · `/폭탄 넘겨 [닉]` · `/사다리` · `/룰렛` · `/스케치 3` */
 export function parseMiniGameChat(raw: string): MiniGameParse {
   const trimmed = String(raw ?? "").trim().normalize("NFC");
   const bombRandom = trimmed.match(/^\/(?:폭탄|bomb)\s+(?:랜덤|random)\s*$/i);
@@ -310,6 +323,14 @@ export function parseMiniGameChat(raw: string): MiniGameParse {
   }
   if (/^\/(?:룰렛|roulette)\s*$/i.test(trimmed)) {
     return { kind: "roulette-open" };
+  }
+  const sketchOpen = trimmed.match(/^\/(?:스케치|sketch)(?:\s+(\d+))?\s*$/i);
+  if (sketchOpen) {
+    const n = sketchOpen[1] ? Number(sketchOpen[1]) : SKETCH_DEFAULT_ROUNDS;
+    const rounds = Number.isFinite(n)
+      ? Math.max(SKETCH_MIN_ROUNDS, Math.min(SKETCH_MAX_ROUNDS, Math.floor(n)))
+      : SKETCH_DEFAULT_ROUNDS;
+    return { kind: "sketch-open", rounds };
   }
   return { kind: "none" };
 }
@@ -378,6 +399,159 @@ export type RouletteSpinPayload = { slots: string[] };
 export type RouletteAck =
   | { ok: true; roulette: RouletteState }
   | { ok: false; error: string };
+
+export type SketchCategoryId =
+  | "animal"
+  | "food"
+  | "object"
+  | "job"
+  | "media";
+
+export type SketchCategory = {
+  id: SketchCategoryId;
+  label: string;
+  topics: string[];
+};
+
+export const SKETCH_CATEGORIES: SketchCategory[] = [
+  {
+    id: "animal",
+    label: "동물",
+    topics: [
+      "고양이",
+      "강아지",
+      "토끼",
+      "펭귄",
+      "코끼리",
+      "기린",
+      "판다",
+      "햄스터",
+      "돌고래",
+      "여우",
+    ],
+  },
+  {
+    id: "food",
+    label: "음식",
+    topics: [
+      "김밥",
+      "피자",
+      "치킨",
+      "수박",
+      "아이스크림",
+      "라면",
+      "케이크",
+      "사과",
+      "햄버거",
+      "떡볶이",
+    ],
+  },
+  {
+    id: "object",
+    label: "물건",
+    topics: [
+      "우산",
+      "안경",
+      "시계",
+      "연필",
+      "가방",
+      "전화기",
+      "의자",
+      "열쇠",
+      "칫솔",
+      "카메라",
+    ],
+  },
+  {
+    id: "job",
+    label: "직업",
+    topics: [
+      "의사",
+      "요리사",
+      "경찰",
+      "소방관",
+      "가수",
+      "화가",
+      "선생님",
+      "우주비행사",
+      "농부",
+      "운동선수",
+    ],
+  },
+  {
+    id: "media",
+    label: "애니·게임",
+    topics: [
+      "피카츄",
+      "슈퍼마리오",
+      "젤다",
+      "토토로",
+      "스폰지밥",
+      "마인크래프트",
+      "포켓몬",
+      "디즈니",
+      "원피스",
+      "별의커비",
+    ],
+  },
+];
+
+export type SketchVote = "yes" | "no";
+
+export type SketchStrokePoint = { x: number; y: number };
+
+export type SketchStroke = {
+  id: string;
+  color: string;
+  width: number;
+  points: SketchStrokePoint[];
+};
+
+export type SketchState = {
+  hostMemberId: string;
+  hostNickname: string;
+  totalRounds: number;
+  roundIndex: number;
+  phase: "voting" | "drawing" | "roundReveal" | "done";
+  categoryId: SketchCategoryId | null;
+  votes: Array<{ memberId: string; nickname: string; vote: SketchVote }>;
+  playerIds: string[];
+  drawerMemberId: string | null;
+  drawerNickname: string | null;
+  /** drawing 중에도 Sync에 포함. UI는 출제자·공개 후에만 표시 */
+  topic: string | null;
+  strokes: SketchStroke[];
+  endsAt: number | null;
+  winnerMemberId: string | null;
+  winnerNickname: string | null;
+  endReason: "guess" | "reveal" | "timeout" | null;
+  /** 이번 사이클에서 이미 출제한 사람 (랜덤 로테이션) */
+  drawnMemberIds: string[];
+};
+
+export type SketchOpenPayload = { rounds?: number };
+export type SketchVotePayload = { vote: SketchVote };
+export type SketchStartPayload = { categoryId: SketchCategoryId };
+export type SketchStrokePayload = { stroke: SketchStroke };
+
+export type SketchAck =
+  | { ok: true; sketch: SketchState }
+  | { ok: false; error: string };
+
+export function normalizeSketchGuess(raw: string): string {
+  return String(raw ?? "")
+    .normalize("NFC")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "");
+}
+
+export function sketchCategoryById(
+  id: SketchCategoryId | null | undefined,
+): SketchCategory | undefined {
+  if (!id) return undefined;
+  return SKETCH_CATEGORIES.find((c) => c.id === id);
+}
 
 /** rungs[row][gap] = true → gap와 gap+1 열을 가로로 연결.
  *  columns>=2 이면 가로줄 합계 최소 5개(가능하면)를 보장. */
@@ -530,6 +704,15 @@ export const SocketEvents = {
   RouletteSpin: "roulette:spin",
   RouletteSync: "roulette:sync",
   RouletteCancel: "roulette:cancel",
+  SketchOpen: "sketch:open",
+  SketchVote: "sketch:vote",
+  SketchCategory: "sketch:category",
+  SketchStart: "sketch:start",
+  SketchStroke: "sketch:stroke",
+  SketchClear: "sketch:clear",
+  SketchReveal: "sketch:reveal",
+  SketchSync: "sketch:sync",
+  SketchCancel: "sketch:cancel",
 } as const;
 
 export type FriendGroup = {

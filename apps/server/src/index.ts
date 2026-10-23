@@ -339,6 +339,30 @@ io.on("connection", (socket) => {
   socket.on(SocketEvents.RouletteCancel, (payload, ack) => {
     games.cancelRoulette(socket, payload, ack);
   });
+  socket.on(SocketEvents.SketchOpen, (payload, ack) => {
+    games.openSketch(socket, payload ?? {}, ack);
+  });
+  socket.on(SocketEvents.SketchVote, (payload, ack) => {
+    games.voteSketch(socket, payload ?? { vote: "yes" }, ack);
+  });
+  socket.on(SocketEvents.SketchCategory, (payload, ack) => {
+    games.setSketchCategory(socket, payload ?? { categoryId: "animal" }, ack);
+  });
+  socket.on(SocketEvents.SketchStart, (payload, ack) => {
+    games.startSketch(socket, payload ?? { categoryId: "animal" }, ack);
+  });
+  socket.on(SocketEvents.SketchStroke, (payload, ack) => {
+    games.strokeSketch(socket, payload ?? { stroke: { id: "", color: "#111", width: 3, points: [] } }, ack);
+  });
+  socket.on(SocketEvents.SketchClear, (payload, ack) => {
+    games.clearSketch(socket, payload, ack);
+  });
+  socket.on(SocketEvents.SketchReveal, (payload, ack) => {
+    games.revealSketch(socket, payload, ack);
+  });
+  socket.on(SocketEvents.SketchCancel, (payload, ack) => {
+    games.cancelSketch(socket, payload, ack);
+  });
 
   socket.on(SocketEvents.RoomCreate, async (payload: RoomCreatePayload, ack?: (r: RoomCreateAck) => void) => {
     try {
@@ -532,6 +556,10 @@ io.on("connection", (socket) => {
       message,
       parsed.kind === "letter" ? parsed.targetNickname : undefined,
     );
+
+    if (parsed.kind !== "letter" && !attachments.length) {
+      games.trySketchGuess(socket, text);
+    }
 
     setTimeout(() => {
       void BUBBLE_TTL_MS;
