@@ -332,6 +332,10 @@ export function App() {
           room.voteSketch(action.vote);
           return;
         }
+        if (action.type === "sketch-join") {
+          room.joinSketch();
+          return;
+        }
         if (action.type === "sketch-category") {
           room.setSketchCategory(action.categoryId);
           return;
@@ -377,6 +381,7 @@ export function App() {
     room.cancelRoulette,
     room.openSketch,
     room.voteSketch,
+    room.joinSketch,
     room.setSketchCategory,
     room.startSketch,
     room.strokeSketch,
