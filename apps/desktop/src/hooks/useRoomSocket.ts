@@ -567,6 +567,10 @@ export function useRoomSocket(opts: Options) {
     socketRef.current?.emit(SocketEvents.SketchVote, { vote });
   }, []);
 
+  const joinSketch = useCallback(() => {
+    socketRef.current?.emit(SocketEvents.SketchJoin);
+  }, []);
+
   const setSketchCategory = useCallback((categoryId: SketchCategoryId) => {
     socketRef.current?.emit(SocketEvents.SketchCategory, { categoryId });
   }, []);
@@ -951,6 +955,7 @@ export function useRoomSocket(opts: Options) {
     cancelRoulette,
     openSketch,
     voteSketch,
+    joinSketch,
     setSketchCategory,
     startSketch,
     strokeSketch,

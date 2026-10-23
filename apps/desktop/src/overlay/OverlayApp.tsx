@@ -449,6 +449,9 @@ export function OverlayApp() {
 
   const chatInputRef = useRef<HTMLInputElement>(null);
   const sketchUiRef = useRef<HTMLDivElement | null>(null);
+  const sketchDragRef = useRef(false);
+  /** 스케치 찬반 말풍선이 떠 있으면 캐릭터 주변 hit 확장 */
+  const sketchVoteAskRef = useRef(false);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingPickRef = useRef<AttachCommand | null>(null);
@@ -509,7 +512,7 @@ export function OverlayApp() {
       guide.session.phase === "settings" &&
       settingsVisibleRef.current,
   );
-  inviteUiRef.current = Boolean(pendingInvite);
+  inviteUiRef.current = Boolean(pendingInvite || sketchVoteAskRef.current);
 
   useEffect(() => {
     const syncInvite = () => setPendingInvite(readPendingInvite());
@@ -609,11 +612,13 @@ export function OverlayApp() {
           prev.drawerMemberId === next.drawerMemberId &&
           prev.topic === next.topic &&
           prev.endsAt === next.endsAt &&
+          prev.voteEndsAt === next.voteEndsAt &&
           prev.categoryId === next.categoryId &&
           prev.strokes.map((s) => s.id).join("|") ===
             next.strokes.map((s) => s.id).join("|") &&
           prev.votes.map((v) => `${v.memberId}:${v.vote}`).join("|") ===
             next.votes.map((v) => `${v.memberId}:${v.vote}`).join("|") &&
+          prev.playerIds.join("|") === next.playerIds.join("|") &&
           prev.winnerMemberId === next.winnerMemberId &&
           prev.endReason === next.endReason;
         if (same) return prev;
@@ -940,11 +945,13 @@ export function OverlayApp() {
             prev.drawerMemberId === next.drawerMemberId &&
             prev.topic === next.topic &&
             prev.endsAt === next.endsAt &&
+            prev.voteEndsAt === next.voteEndsAt &&
             prev.categoryId === next.categoryId &&
             prev.strokes.map((s) => s.id).join("|") ===
               next.strokes.map((s) => s.id).join("|") &&
             prev.votes.map((v) => `${v.memberId}:${v.vote}`).join("|") ===
               next.votes.map((v) => `${v.memberId}:${v.vote}`).join("|") &&
+            prev.playerIds.join("|") === next.playerIds.join("|") &&
             prev.winnerMemberId === next.winnerMemberId &&
             prev.endReason === next.endReason;
           if (same) return prev;
@@ -1342,13 +1349,14 @@ export function OverlayApp() {
           const overEffectFull = effectHit === "full";
           const sketchBox = sketchUiRef.current?.getBoundingClientRect();
           const overSketchUi = Boolean(
-            sketchBox &&
-              sketchBox.width > 0 &&
-              sketchBox.height > 0 &&
-              cx >= sketchBox.left - 4 &&
-              cx <= sketchBox.right + 4 &&
-              cy >= sketchBox.top - 4 &&
-              cy <= sketchBox.bottom + 4,
+            sketchDragRef.current ||
+              (sketchBox &&
+                sketchBox.width > 0 &&
+                sketchBox.height > 0 &&
+                cx >= sketchBox.left - 4 &&
+                cx <= sketchBox.right + 4 &&
+                cy >= sketchBox.top - 4 &&
+                cy <= sketchBox.bottom + 4),
           );
           // 설정 창 가이드가 떠 있으면 무조건 클릭 통과 — 안 그러면
           // 풀스크린 오버레이가 설정 가이드 입력을 가로채 깜빡임/먹통 발생
@@ -1852,6 +1860,9 @@ export function OverlayApp() {
           at: Date.now(),
         });
       }
+      if (mini.kind === "sketch-join") {
+        writeGamePending({ type: "sketch-join", at: Date.now() });
+      }
       setChat("");
       setPlusOpen(false);
       setMoveOpen(false);
@@ -1991,6 +2002,13 @@ export function OverlayApp() {
   const showLadder = Boolean(ladder && !ladderDismissed);
   const showRoulette = Boolean(roulette && !rouletteDismissed);
   const showSketch = Boolean(sketch && !sketchDismissed);
+  sketchVoteAskRef.current = Boolean(
+    showSketch &&
+      sketch?.phase === "voting" &&
+      selfMemberId &&
+      !sketch.votes.some((v) => v.memberId === selfMemberId),
+  );
+  inviteUiRef.current = Boolean(pendingInvite || sketchVoteAskRef.current);
   // 상대가 준비 중일 때는 대기 문구만 보이고, 화면 클릭은 통과시킨다.
   const ladderBlocksScreen = Boolean(
     showLadder &&
@@ -2053,7 +2071,7 @@ export function OverlayApp() {
   const ladderCmdTip = ladderDraft ? "참가자 사다리를 열어요" : null;
   const rouletteCmdTip = rouletteDraft ? "칸을 정하고 값을 적은 뒤 돌립니다" : null;
   const sketchCmdTip = sketchDraft
-    ? "예: /스케치 또는 /스케치 5 (1~10판, 찬반 후 시작)"
+    ? "예: /스케치 5 · /스케치 참여 (중간 참가, 20초 찬반)"
     : null;
   const bombCmdTip = bombDraft
     ? bombParse?.kind === "bomb-pass"
@@ -2300,6 +2318,9 @@ export function OverlayApp() {
           sketch={sketch}
           selfMemberId={selfMemberId}
           uiRef={sketchUiRef}
+          onDragActive={(active) => {
+            sketchDragRef.current = active;
+          }}
           onVote={(vote) =>
             writeGamePending({ type: "sketch-vote", vote, at: Date.now() })
           }
@@ -2439,6 +2460,59 @@ export function OverlayApp() {
                 </div>
               );
             }
+            if (
+              isSelf &&
+              showSketch &&
+              sketch?.phase === "voting" &&
+              selfMemberId &&
+              !sketch.votes.some((v) => v.memberId === selfMemberId)
+            ) {
+              const left = sketch.voteEndsAt
+                ? Math.max(0, Math.ceil((sketch.voteEndsAt - Date.now()) / 1000))
+                : 20;
+              return (
+                <div
+                  className="bubble invite sketch-vote"
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <span className="bubble-text">
+                    {(sketch.hostNickname || "누군가").trim()}님의 스케치 퀴즈 ·{" "}
+                    {left}초
+                  </span>
+                  <div className="bubble-actions">
+                    <button
+                      type="button"
+                      className="bubble-btn accept"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        writeGamePending({
+                          type: "sketch-vote",
+                          vote: "yes",
+                          at: Date.now(),
+                        });
+                      }}
+                    >
+                      찬성
+                    </button>
+                    <button
+                      type="button"
+                      className="bubble-btn dismiss"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        writeGamePending({
+                          type: "sketch-vote",
+                          vote: "no",
+                          at: Date.now(),
+                        });
+                      }}
+                    >
+                      반대
+                    </button>
+                  </div>
+                </div>
+              );
+            }
             if (isSelf && overlayNotice) {
               return (
                 <div className="bubble notice">
@@ -2461,9 +2535,16 @@ export function OverlayApp() {
               isSelf ? statusMessage : member.statusMessage || ""
             ).trim();
             if (!statusText) return null;
+            const sketchVoteAsk =
+              isSelf &&
+              showSketch &&
+              sketch?.phase === "voting" &&
+              selfMemberId &&
+              !sketch.votes.some((v) => v.memberId === selfMemberId);
             const hasSpeech =
               Boolean(bubble) ||
-              (isSelf && Boolean(pendingInvite || overlayNotice));
+              (isSelf &&
+                Boolean(pendingInvite || overlayNotice || sketchVoteAsk));
             return (
               <div className={`status-bubble${hasSpeech ? " with-chat" : ""}`}>
                 {statusText}
@@ -2852,7 +2933,7 @@ export function OverlayApp() {
                           : rouletteDraft
                             ? "/룰렛"
                             : sketchDraft
-                              ? "/스케치 3"
+                              ? "/스케치 3 · /스케치 참여"
                               : inRoom
                                 ? "메시지 · /편지 · /계란 · /폭탄 · /사다리 · /룰렛 · /스케치"
                                 : "혼잣말 · /편지 · /계란…"

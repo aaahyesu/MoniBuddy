@@ -28,6 +28,7 @@ import {
   SKETCH_MIN_YES,
   SKETCH_REVEAL_MS,
   SKETCH_ROUND_MS,
+  SKETCH_VOTE_MS,
   SocketEvents,
   ROULETTE_MAX_SLOTS,
   ROULETTE_MIN_SLOTS,
@@ -51,6 +52,7 @@ export type GameRoom = {
   sketch?: SketchState;
   sketchRoundTimer?: ReturnType<typeof setTimeout>;
   sketchRevealTimer?: ReturnType<typeof setTimeout>;
+  sketchVoteTimer?: ReturnType<typeof setTimeout>;
 };
 
 function memberByNick(room: GameRoom, nick: string): Member | undefined {
@@ -468,6 +470,33 @@ export function attachMiniGames(
       clearTimeout(room.sketchRevealTimer);
       room.sketchRevealTimer = undefined;
     }
+    if (room.sketchVoteTimer) {
+      clearTimeout(room.sketchVoteTimer);
+      room.sketchVoteTimer = undefined;
+    }
+  };
+
+  const autoStartSketch = (code: string) => {
+    const room = rooms.get(code);
+    if (!room?.sketch || room.sketch.phase !== "voting") return;
+    if (room.sketchVoteTimer) {
+      clearTimeout(room.sketchVoteTimer);
+      room.sketchVoteTimer = undefined;
+    }
+    if (room.sketch.playerIds.length < SKETCH_MIN_YES) {
+      room.sketch = undefined;
+      io.to(code).emit(SocketEvents.SketchCancel, { at: Date.now() });
+      return;
+    }
+    const categoryId = room.sketch.categoryId ?? "animal";
+    const base: SketchState = {
+      ...room.sketch,
+      categoryId,
+      roundIndex: 1,
+      drawnMemberIds: [],
+      voteEndsAt: null,
+    };
+    beginSketchRound(code, base);
   };
 
   const emitSketch = (code: string, sketch: SketchState) => {
@@ -526,6 +555,7 @@ export function attachMiniGames(
       phase: "drawing",
       strokes: [],
       endsAt: Date.now() + SKETCH_ROUND_MS,
+      voteEndsAt: null,
       winnerMemberId: null,
       winnerNickname: null,
       endReason: null,
@@ -620,6 +650,7 @@ export function attachMiniGames(
         Number.isFinite(rawRounds) ? Math.floor(rawRounds) : SKETCH_DEFAULT_ROUNDS,
       ),
     );
+    const voteEndsAt = Date.now() + SKETCH_VOTE_MS;
     const sketch: SketchState = {
       hostMemberId: member.id,
       hostNickname: member.nickname,
@@ -636,6 +667,7 @@ export function attachMiniGames(
       topic: null,
       strokes: [],
       endsAt: null,
+      voteEndsAt,
       winnerMemberId: null,
       winnerNickname: null,
       endReason: null,
@@ -643,6 +675,10 @@ export function attachMiniGames(
     };
     room.sketch = sketch;
     emitSketch(code, sketch);
+    if (room.sketchVoteTimer) clearTimeout(room.sketchVoteTimer);
+    room.sketchVoteTimer = setTimeout(() => {
+      autoStartSketch(code);
+    }, SKETCH_VOTE_MS);
     ack?.({ ok: true, sketch });
   };
 
@@ -680,6 +716,43 @@ export function attachMiniGames(
     ack?.({ ok: true, sketch });
   };
 
+  const joinSketch = (
+    socket: Socket,
+    _payload?: unknown,
+    ack?: (r: SketchAck) => void,
+  ) => {
+    const code = getRoomCode(socket.id);
+    if (!code) {
+      ack?.({ ok: false, error: "not in room" });
+      return;
+    }
+    const room = rooms.get(code);
+    if (!room?.sketch || room.sketch.phase === "done") {
+      ack?.({ ok: false, error: "진행 중인 스케치가 없어요" });
+      return;
+    }
+    const memberId = room.socketToMember.get(socket.id);
+    const member = memberId ? room.members.get(memberId) : undefined;
+    if (!member) {
+      ack?.({ ok: false, error: "not a member" });
+      return;
+    }
+    if (room.sketch.playerIds.includes(member.id)) {
+      ack?.({ ok: true, sketch: room.sketch });
+      return;
+    }
+    const others = room.sketch.votes.filter((v) => v.memberId !== member.id);
+    const votes: SketchState["votes"] = [
+      ...others,
+      { memberId: member.id, nickname: member.nickname, vote: "yes" },
+    ];
+    const playerIds = [...room.sketch.playerIds, member.id];
+    const sketch: SketchState = { ...room.sketch, votes, playerIds };
+    room.sketch = sketch;
+    emitSketch(code, sketch);
+    ack?.({ ok: true, sketch });
+  };
+
   const startSketch = (
     socket: Socket,
     payload: SketchStartPayload,
@@ -706,11 +779,16 @@ export function attachMiniGames(
     }
     const categoryId =
       sketchCategoryById(payload?.categoryId)?.id ?? room.sketch.categoryId ?? "animal";
+    if (room.sketchVoteTimer) {
+      clearTimeout(room.sketchVoteTimer);
+      room.sketchVoteTimer = undefined;
+    }
     const base: SketchState = {
       ...room.sketch,
       categoryId,
       roundIndex: 1,
       drawnMemberIds: [],
+      voteEndsAt: null,
     };
     const started = beginSketchRound(code, base);
     if (!started) {
@@ -857,6 +935,7 @@ export function attachMiniGames(
         topic: null,
         strokes: [],
         endsAt: null,
+        voteEndsAt: null,
         winnerMemberId: null,
         winnerNickname: null,
         endReason: null,
@@ -930,6 +1009,7 @@ export function attachMiniGames(
     cancelRoulette,
     openSketch,
     voteSketch,
+    joinSketch,
     startSketch,
     setSketchCategory,
     strokeSketch,
@@ -979,6 +1059,10 @@ export function attachMiniGames(
       }
       if (/^\/(?:룰렛|roulette)\s*$/i.test(t)) {
         openRoulette(socket);
+        return true;
+      }
+      if (/^\/(?:스케치|sketch)\s+(?:참여|join)\s*$/i.test(t)) {
+        joinSketch(socket);
         return true;
       }
       const sketchOpen = t.match(/^\/(?:스케치|sketch)(?:\s+(\d+))?\s*$/i);

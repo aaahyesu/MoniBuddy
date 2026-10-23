@@ -123,6 +123,7 @@ export type GamePendingAction =
   | { type: "roulette-cancel"; at: number }
   | { type: "sketch-open"; rounds: number; at: number }
   | { type: "sketch-vote"; vote: "yes" | "no"; at: number }
+  | { type: "sketch-join"; at: number }
   | {
       type: "sketch-category";
       categoryId: import("@monibuddy/shared").SketchCategoryId;

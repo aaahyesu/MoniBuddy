@@ -2,6 +2,7 @@ import {
   useEffect,
   useRef,
   useState,
+  type CSSProperties,
   type PointerEvent as ReactPointerEvent,
   type Ref,
 } from "react";
@@ -56,6 +57,8 @@ type Props = {
   sketch: SketchState;
   selfMemberId: string | null;
   uiRef?: Ref<HTMLDivElement>;
+  /** 창·팔레트 드래그 중 클릭 통과가 끊기지 않도록 */
+  onDragActive?: (active: boolean) => void;
   onVote: (vote: SketchVote) => void;
   onCategory: (categoryId: SketchCategoryId) => void;
   onStart: (categoryId: SketchCategoryId) => void;
@@ -65,6 +68,20 @@ type Props = {
   onCancel: () => void;
   onDismiss: () => void;
 };
+
+const SKETCH_POS_KEY = "monibuddy.sketchPanelPos.v1";
+
+function readPanelPos(): { x: number; y: number } | null {
+  try {
+    const raw = localStorage.getItem(SKETCH_POS_KEY);
+    if (!raw) return null;
+    const p = JSON.parse(raw) as { x?: number; y?: number };
+    if (typeof p?.x !== "number" || typeof p?.y !== "number") return null;
+    return { x: p.x, y: p.y };
+  } catch {
+    return null;
+  }
+}
 
 function useCountdown(endsAt: number | null) {
   const [left, setLeft] = useState(0);
@@ -85,7 +102,8 @@ export function SketchGame({
   sketch,
   selfMemberId,
   uiRef,
-  onVote,
+  onDragActive,
+  onVote: _onVote,
   onCategory,
   onStart,
   onStroke,
@@ -94,19 +112,77 @@ export function SketchGame({
   onCancel,
   onDismiss,
 }: Props) {
+  void _onVote;
   const isHost = Boolean(selfMemberId) && selfMemberId === sketch.hostMemberId;
   const isDrawer =
     Boolean(selfMemberId) && selfMemberId === sketch.drawerMemberId;
-  const myVote = sketch.votes.find((v) => v.memberId === selfMemberId)?.vote;
   const yesCount = sketch.playerIds.length;
-  const seconds = useCountdown(
+  const roundSeconds = useCountdown(
     sketch.phase === "drawing" ? sketch.endsAt : null,
   );
+  const voteSeconds = useCountdown(
+    sketch.phase === "voting" ? sketch.voteEndsAt : null,
+  );
   const [uiOpacity, setUiOpacity] = useState(readSketchOpacity);
-  const rootStyle = { opacity: uiOpacity / 100 };
+  const [panelPos, setPanelPos] = useState<{ x: number; y: number } | null>(
+    readPanelPos,
+  );
+  const panelDragRef = useRef<{
+    ox: number;
+    oy: number;
+    sx: number;
+    sy: number;
+  } | null>(null);
+
+  const rootStyle: CSSProperties = {
+    opacity: uiOpacity / 100,
+    ...(panelPos
+      ? { left: panelPos.x, top: panelPos.y, transform: "none" }
+      : {}),
+  };
+
+  const beginPanelDrag = (e: ReactPointerEvent<HTMLElement>) => {
+    if ((e.target as HTMLElement).closest("button, input, label, a")) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const el = (uiRef && typeof uiRef !== "function" ? uiRef.current : null) ??
+      (e.currentTarget.closest(".sketch-root") as HTMLElement | null);
+    const rect = el?.getBoundingClientRect();
+    const ox = panelPos?.x ?? rect?.left ?? 12;
+    const oy = panelPos?.y ?? rect?.top ?? 8;
+    panelDragRef.current = { ox, oy, sx: e.clientX, sy: e.clientY };
+    onDragActive?.(true);
+    const onMove = (ev: PointerEvent) => {
+      const d = panelDragRef.current;
+      if (!d) return;
+      const next = {
+        x: Math.max(4, d.ox + (ev.clientX - d.sx)),
+        y: Math.max(4, d.oy + (ev.clientY - d.sy)),
+      };
+      setPanelPos(next);
+    };
+    const onUp = () => {
+      panelDragRef.current = null;
+      onDragActive?.(false);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      setPanelPos((prev) => {
+        if (prev) {
+          try {
+            localStorage.setItem(SKETCH_POS_KEY, JSON.stringify(prev));
+          } catch {
+            /* ignore */
+          }
+        }
+        return prev;
+      });
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
 
   const opacityGauge = (
-    <label className="sketch-opacity">
+    <label className="sketch-opacity" onPointerDown={(e) => e.stopPropagation()}>
       <span className="sketch-opacity-label">투명도</span>
       <input
         type="range"
@@ -128,72 +204,51 @@ export function SketchGame({
     </label>
   );
 
+  // 찬반 알럿은 오버레이 말풍선 — 호스트만 카테고리·타이머 바
   if (sketch.phase === "voting") {
+    if (!isHost) return null;
     return (
       <div className="sketch-root voting" ref={uiRef} style={rootStyle}>
-        <div className="sketch-topbar">
+        <div
+          className="sketch-topbar sketch-drag-handle"
+          onPointerDown={beginPanelDrag}
+          title="테두리를 잡고 창 옮기기"
+        >
           <div className="sketch-topbar-row">
-            <p className="sketch-brand">SKETCH</p>
+            <p className="sketch-brand">SKETCH · 참가 모집</p>
             {opacityGauge}
           </div>
           <p className="sketch-meta">
-            {sketch.totalRounds}판 · 찬성 {yesCount}명
+            {sketch.totalRounds}판 · 찬성 {yesCount}명 · {voteSeconds}초 후 시작
           </p>
-          <div className="sketch-cats">
+          <div className="sketch-cats" onPointerDown={(e) => e.stopPropagation()}>
             {SKETCH_CATEGORIES.map((cat) => (
               <button
                 key={cat.id}
                 type="button"
                 className={sketch.categoryId === cat.id ? "on" : ""}
-                disabled={!isHost}
                 onClick={() => onCategory(cat.id)}
               >
                 {cat.label}
               </button>
             ))}
           </div>
-        </div>
-        <div className="sketch-vote-card">
-          <h3>스케치 참가할까요?</h3>
-          <p className="sketch-hint">
-            <strong>{sketch.hostNickname}</strong> 님이 열었어요 · 찬성한 사람만
-            참가
-          </p>
-          <div className="sketch-vote-actions">
-            <button
-              type="button"
-              className={myVote === "yes" ? "primary on" : "primary"}
-              onClick={() => onVote("yes")}
-            >
-              찬성
+          <div
+            className="sketch-host-actions"
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            <button type="button" className="ghost" onClick={onCancel}>
+              취소
             </button>
             <button
               type="button"
-              className={myVote === "no" ? "ghost on" : "ghost"}
-              onClick={() => onVote("no")}
+              className="primary"
+              disabled={yesCount < SKETCH_MIN_YES || !sketch.categoryId}
+              onClick={() => sketch.categoryId && onStart(sketch.categoryId)}
             >
-              반대
+              바로 시작
             </button>
           </div>
-          {isHost ? (
-            <div className="sketch-host-actions">
-              <button type="button" className="ghost" onClick={onCancel}>
-                취소
-              </button>
-              <button
-                type="button"
-                className="primary"
-                disabled={yesCount < SKETCH_MIN_YES || !sketch.categoryId}
-                onClick={() =>
-                  sketch.categoryId && onStart(sketch.categoryId)
-                }
-              >
-                시작
-              </button>
-            </div>
-          ) : (
-            <p className="sketch-hint wait">주최자가 카테고리를 고르고 시작해요</p>
-          )}
         </div>
       </div>
     );
@@ -202,14 +257,23 @@ export function SketchGame({
   if (sketch.phase === "done") {
     return (
       <div className="sketch-root done" ref={uiRef} style={rootStyle}>
-        <div className="sketch-vote-card">
+        <div
+          className="sketch-vote-card sketch-drag-handle"
+          onPointerDown={beginPanelDrag}
+          title="테두리를 잡고 창 옮기기"
+        >
           <div className="sketch-topbar-row">
             <p className="sketch-brand">SKETCH</p>
             {opacityGauge}
           </div>
           <h3>스케치 종료</h3>
           <p className="sketch-hint">{sketch.totalRounds}판 끝났어요</p>
-          <button type="button" className="primary" onClick={onDismiss}>
+          <button
+            type="button"
+            className="primary"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={onDismiss}
+          >
             닫기
           </button>
         </div>
@@ -219,7 +283,11 @@ export function SketchGame({
 
   return (
     <div className="sketch-root play" ref={uiRef} style={rootStyle}>
-      <div className="sketch-topbar">
+      <div
+        className="sketch-topbar sketch-drag-handle"
+        onPointerDown={beginPanelDrag}
+        title="테두리를 잡고 창 옮기기"
+      >
         <div className="sketch-topbar-row">
           <p className="sketch-brand">SKETCH</p>
           {opacityGauge}
@@ -227,7 +295,7 @@ export function SketchGame({
         <p className="sketch-meta">
           {sketch.roundIndex}/{sketch.totalRounds} ·{" "}
           {sketch.drawerNickname ?? "출제자"}
-          {sketch.phase === "drawing" ? ` · ${seconds}초` : ""}
+          {sketch.phase === "drawing" ? ` · ${roundSeconds}초` : ""}
         </p>
         {isDrawer && sketch.phase === "drawing" && sketch.topic ? (
           <p className="sketch-topic">주제: {sketch.topic}</p>
@@ -243,6 +311,7 @@ export function SketchGame({
         strokes={sketch.strokes}
         canDraw={isDrawer && sketch.phase === "drawing"}
         onStroke={onStroke}
+        onDragActive={onDragActive}
       />
       {sketch.phase === "roundReveal" ? (
         <div className="sketch-reveal">
@@ -281,10 +350,12 @@ function SketchBoard({
   strokes,
   canDraw,
   onStroke,
+  onDragActive,
 }: {
   strokes: SketchStroke[];
   canDraw: boolean;
   onStroke: (stroke: SketchStroke) => void;
+  onDragActive?: (active: boolean) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [color, setColor] = useState(PEN_COLORS[0]!);
@@ -312,26 +383,29 @@ function SketchBoard({
     if ((e.target as HTMLElement).closest(".sketch-palette-body")) return;
     e.preventDefault();
     e.stopPropagation();
-    e.currentTarget.setPointerCapture(e.pointerId);
     paletteDragRef.current = {
       ox: palettePos.x,
       oy: palettePos.y,
       sx: e.clientX,
       sy: e.clientY,
     };
-  };
-
-  const onPaletteFrameMove = (e: ReactPointerEvent<HTMLDivElement>) => {
-    const drag = paletteDragRef.current;
-    if (!drag) return;
-    setPalettePos({
-      x: drag.ox + (e.clientX - drag.sx),
-      y: drag.oy + (e.clientY - drag.sy),
-    });
-  };
-
-  const onPaletteFrameUp = () => {
-    paletteDragRef.current = null;
+    onDragActive?.(true);
+    const onMove = (ev: PointerEvent) => {
+      const d = paletteDragRef.current;
+      if (!d) return;
+      setPalettePos({
+        x: d.ox + (ev.clientX - d.sx),
+        y: d.oy + (ev.clientY - d.sy),
+      });
+    };
+    const onUp = () => {
+      paletteDragRef.current = null;
+      onDragActive?.(false);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
   };
 
   const paint = (extra?: SketchStroke | null) => {
@@ -479,9 +553,6 @@ function SketchBoard({
                 <div
                   className="sketch-palette-frame"
                   onPointerDown={onPaletteFrameDown}
-                  onPointerMove={onPaletteFrameMove}
-                  onPointerUp={onPaletteFrameUp}
-                  onPointerCancel={onPaletteFrameUp}
                   title="테두리를 잡고 옮기기"
                 >
                   <div className="sketch-palette-body">

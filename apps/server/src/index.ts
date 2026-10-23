@@ -345,6 +345,9 @@ io.on("connection", (socket) => {
   socket.on(SocketEvents.SketchVote, (payload, ack) => {
     games.voteSketch(socket, payload ?? { vote: "yes" }, ack);
   });
+  socket.on(SocketEvents.SketchJoin, (payload, ack) => {
+    games.joinSketch(socket, payload, ack);
+  });
   socket.on(SocketEvents.SketchCategory, (payload, ack) => {
     games.setSketchCategory(socket, payload ?? { categoryId: "animal" }, ack);
   });

@@ -2020,6 +2020,14 @@
   justify-content: space-between;
   gap: 10px;
 }
+.sketch-drag-handle {
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.sketch-drag-handle:active {
+  cursor: grabbing;
+}
 .sketch-opacity {
   display: flex;
   align-items: center;
@@ -2102,7 +2110,8 @@
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-  margin-top: 6px;
+  margin-top: 8px;
+  margin-bottom: 4px;
 }
 .sketch-cats button {
   appearance: none;
@@ -2155,6 +2164,11 @@
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+.sketch-host-actions {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.25);
 }
 .sketch-root button {
   appearance: none;
