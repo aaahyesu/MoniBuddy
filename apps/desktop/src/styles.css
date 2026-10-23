@@ -2091,6 +2091,46 @@
   letter-spacing: 0.12em;
   color: #55ddff;
 }
+.sketch-brand-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+.sketch-topic-inline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.sketch-topic-word {
+  font-size: 13px;
+  font-weight: 700;
+  color: #7dffb3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sketch-topic-masked {
+  font-size: 11px;
+  color: #888;
+}
+.sketch-topic-toggle {
+  flex: 0 0 auto;
+  appearance: none;
+  border: 1px solid #fff;
+  border-radius: 0;
+  background: #000;
+  color: #fff;
+  font: inherit;
+  font-size: 10px;
+  padding: 1px 6px;
+  cursor: pointer;
+}
+.sketch-topic-toggle:hover {
+  background: #1c2430;
+}
 .sketch-meta {
   margin: 2px 0 0;
   font-size: 12px;

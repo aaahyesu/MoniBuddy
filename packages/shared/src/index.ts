@@ -991,6 +991,8 @@ export type SketchState = {
   endReason: "guess" | "reveal" | "timeout" | null;
   /** 이번 사이클에서 이미 출제한 사람 (랜덤 로테이션) */
   drawnMemberIds: string[];
+  /** 이번 게임에서 이미 나온 주제 (중복 출제 방지) */
+  usedTopics: string[];
   /** 정답 +1 누적. 종료 시 점수순 표시 */
   scores: SketchScore[];
 };
