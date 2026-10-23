@@ -128,12 +128,18 @@ export function SketchGame({
   const [panelPos, setPanelPos] = useState<{ x: number; y: number } | null>(
     readPanelPos,
   );
+  /** 출제자용 — 주제 잠깐 가리기 */
+  const [topicHidden, setTopicHidden] = useState(false);
   const panelDragRef = useRef<{
     ox: number;
     oy: number;
     sx: number;
     sy: number;
   } | null>(null);
+
+  useEffect(() => {
+    setTopicHidden(false);
+  }, [sketch.roundIndex, sketch.topic, sketch.drawerMemberId]);
 
   const rootStyle: CSSProperties = {
     opacity: uiOpacity / 100,
@@ -302,7 +308,40 @@ export function SketchGame({
         title="테두리를 잡고 창 옮기기"
       >
         <div className="sketch-topbar-row">
-          <p className="sketch-brand">SKETCH</p>
+          <div className="sketch-brand-wrap">
+            <p className="sketch-brand">SKETCH</p>
+            {isDrawer && sketch.phase === "drawing" && sketch.topic ? (
+              <div
+                className="sketch-topic-inline"
+                onPointerDown={(e) => e.stopPropagation()}
+              >
+                {topicHidden ? (
+                  <>
+                    <span className="sketch-topic-masked">주제 숨김</span>
+                    <button
+                      type="button"
+                      className="sketch-topic-toggle"
+                      onClick={() => setTopicHidden(false)}
+                    >
+                      보기
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <span className="sketch-topic-word">{sketch.topic}</span>
+                    <button
+                      type="button"
+                      className="sketch-topic-toggle"
+                      onClick={() => setTopicHidden(true)}
+                      title="주제 가리기"
+                    >
+                      숨기기
+                    </button>
+                  </>
+                )}
+              </div>
+            ) : null}
+          </div>
           {opacityGauge}
         </div>
         <p className="sketch-meta">
@@ -310,15 +349,13 @@ export function SketchGame({
           {sketch.drawerNickname ?? "출제자"}
           {sketch.phase === "drawing" ? ` · ${roundSeconds}초` : ""}
         </p>
-        {isDrawer && sketch.phase === "drawing" && sketch.topic ? (
-          <p className="sketch-topic">주제: {sketch.topic}</p>
-        ) : (
+        {!(isDrawer && sketch.phase === "drawing" && sketch.topic) ? (
           <p className="sketch-topic dim">
             {sketch.phase === "roundReveal"
               ? "정답 공개"
               : "출제자가 그리는 중… 채팅으로 맞춰 보세요"}
           </p>
-        )}
+        ) : null}
       </div>
       <SketchBoard
         strokes={sketch.strokes}

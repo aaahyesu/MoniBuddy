@@ -477,14 +477,14 @@ export function attachMiniGames(
     }
   };
 
-  /** 반대만 제외. 투표 안 한 방 멤버도 참가로 넣음(출제자 로테이션·정답 맞춤) */
+  /** 찬성(또는 /스케치 참여)한 사람만 출제·참가 풀 */
   const finalizeSketchPlayers = (room: GameRoom, sketch: SketchState): string[] => {
-    const noIds = new Set(
-      sketch.votes.filter((v) => v.vote === "no").map((v) => v.memberId),
-    );
-    const fromRoom = [...room.members.keys()].filter((id) => !noIds.has(id));
-    if (fromRoom.length > 0) return fromRoom;
-    return sketch.playerIds.filter(Boolean);
+    const yesIds = sketch.votes
+      .filter((v) => v.vote === "yes")
+      .map((v) => v.memberId)
+      .filter((id) => room.members.has(id));
+    const joined = sketch.playerIds.filter((id) => room.members.has(id));
+    return [...new Set([...yesIds, ...joined])];
   };
 
   const initSketchScores = (
@@ -537,6 +537,7 @@ export function attachMiniGames(
       categoryId,
       roundIndex: 1,
       drawnMemberIds: [],
+      usedTopics: [],
       voteEndsAt: null,
     };
     beginSketchRound(code, base);
@@ -551,7 +552,11 @@ export function attachMiniGames(
     sketch: SketchState,
   ): Pick<
     SketchState,
-    "drawerMemberId" | "drawerNickname" | "topic" | "drawnMemberIds"
+    | "drawerMemberId"
+    | "drawerNickname"
+    | "topic"
+    | "drawnMemberIds"
+    | "usedTopics"
   > | null => {
     const players = sketch.playerIds.filter((id) => room.members.has(id));
     if (players.length < SKETCH_MIN_YES) return null;
@@ -570,7 +575,16 @@ export function attachMiniGames(
     drawnMemberIds = [...drawnMemberIds, drawerMemberId];
     const cat =
       sketchCategoryById(sketch.categoryId) ?? SKETCH_CATEGORIES[0]!;
-    const topic = cat.topics[Math.floor(Math.random() * cat.topics.length)]!;
+    const used = sketch.usedTopics ?? [];
+    let topicPool = cat.topics.filter((t) => !used.includes(t));
+    // 카테고리 주제를 다 쓰면 그때만 초기화 (보통 판수 ≤ 주제 수)
+    let usedTopics = [...used];
+    if (topicPool.length === 0) {
+      topicPool = [...cat.topics];
+      usedTopics = [];
+    }
+    const topic = topicPool[Math.floor(Math.random() * topicPool.length)]!;
+    usedTopics = [...usedTopics, topic];
     const nick =
       room.members.get(drawerMemberId)?.nickname ??
       sketch.votes.find((v) => v.memberId === drawerMemberId)?.nickname ??
@@ -580,6 +594,7 @@ export function attachMiniGames(
       drawerNickname: nick,
       topic,
       drawnMemberIds,
+      usedTopics,
     };
   };
 
@@ -731,6 +746,7 @@ export function attachMiniGames(
       winnerNickname: null,
       endReason: null,
       drawnMemberIds: [],
+      usedTopics: [],
       scores: [{ memberId: member.id, nickname: member.nickname, score: 0 }],
     };
     room.sketch = sketch;
@@ -852,6 +868,7 @@ export function attachMiniGames(
       categoryId,
       roundIndex: 1,
       drawnMemberIds: [],
+      usedTopics: [],
       voteEndsAt: null,
     };
     const started = beginSketchRound(code, base);
@@ -1004,6 +1021,7 @@ export function attachMiniGames(
         winnerNickname: null,
         endReason: null,
         drawnMemberIds: [],
+        usedTopics: [],
         scores: [],
       },
     });
@@ -1021,18 +1039,11 @@ export function attachMiniGames(
     const member = memberId ? room.members.get(memberId) : undefined;
     if (!member) return false;
     if (member.id === room.sketch.drawerMemberId) return false;
+    // 참가(찬성·/스케치 참여)한 사람만 정답·점수 인정
+    if (!room.sketch.playerIds.includes(member.id)) return false;
     const guess = normalizeSketchGuess(text);
     const answer = normalizeSketchGuess(room.sketch.topic);
     if (!guess || guess !== answer) return false;
-    // 맞힌 사람은 다음 라운드 출제 풀·점수판에도 넣음
-    if (!room.sketch.playerIds.includes(member.id)) {
-      const playerIds = [...room.sketch.playerIds, member.id];
-      room.sketch = {
-        ...room.sketch,
-        playerIds,
-        scores: initSketchScores(room, playerIds, room.sketch.scores),
-      };
-    }
     finishSketchRound(code, "guess", {
       memberId: member.id,
       nickname: member.nickname,
