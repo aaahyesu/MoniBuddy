@@ -20,6 +20,7 @@ import {
   parseEffectChat,
   parseLetterChat,
   parseMiniGameChat,
+  rankSketchScores,
   type BombExplodePayload,
   type BombState,
   type LadderState,
@@ -67,6 +68,7 @@ import {
   writeGamePending,
   writeInviteAction,
   writeOverlayNotice,
+  writePendingChat,
   type OverlayNotice,
 } from "../lib/overlayBridge";
 import { readDeviceIdentity } from "../lib/deviceIdentity";
@@ -101,7 +103,6 @@ const MOTION_WALK: CharMotion = "walk";
 
 const ROOM_KEY = "monibuddy.activeRoom.v1";
 const RUNTIME_KEY = "monibuddy.runtime.v1";
-const PENDING_CHAT_KEY = "monibuddy.pendingChat.v1";
 const PENDING_ROOM_KEY = "monibuddy.pendingRoom.v1";
 const MOVE_KEY = "monibuddy.moveSettings.v1";
 const CHAT_LOG_KEY = "monibuddy.chatLog.v1";
@@ -620,7 +621,13 @@ export function OverlayApp() {
             next.votes.map((v) => `${v.memberId}:${v.vote}`).join("|") &&
           prev.playerIds.join("|") === next.playerIds.join("|") &&
           prev.winnerMemberId === next.winnerMemberId &&
-          prev.endReason === next.endReason;
+          prev.endReason === next.endReason &&
+          (prev.scores ?? [])
+            .map((s) => `${s.memberId}:${s.score}`)
+            .join("|") ===
+            (next.scores ?? [])
+              .map((s) => `${s.memberId}:${s.score}`)
+              .join("|");
         if (same) return prev;
         if (
           !prev ||
@@ -953,7 +960,13 @@ export function OverlayApp() {
               next.votes.map((v) => `${v.memberId}:${v.vote}`).join("|") &&
             prev.playerIds.join("|") === next.playerIds.join("|") &&
             prev.winnerMemberId === next.winnerMemberId &&
-            prev.endReason === next.endReason;
+            prev.endReason === next.endReason &&
+            (prev.scores ?? [])
+              .map((s) => `${s.memberId}:${s.score}`)
+              .join("|") ===
+              (next.scores ?? [])
+                .map((s) => `${s.memberId}:${s.score}`)
+                .join("|");
           if (same) return prev;
           if (
             !prev ||
@@ -1715,10 +1728,7 @@ export function OverlayApp() {
         : body
           ? `/편지 ${body}`
           : "/편지";
-      localStorage.setItem(
-        PENDING_CHAT_KEY,
-        JSON.stringify({ text: outbound, attachments, at: Date.now() }),
-      );
+      writePendingChat({ text: outbound, attachments, at: Date.now() });
     } else {
       const selfId = selfIdRef.current || "local";
       const optimisticId = `local-${Date.now()}`;
@@ -1733,12 +1743,8 @@ export function OverlayApp() {
         },
       ]);
       seenChat.current.add(optimisticId);
-      localStorage.setItem(
-        PENDING_CHAT_KEY,
-        JSON.stringify({ text: body, attachments, at: Date.now() }),
-      );
+      writePendingChat({ text: body, attachments, at: Date.now() });
     }
-    window.dispatchEvent(new Event("monibuddy:pendingChat"));
     setChat("");
     setAttachHint("");
     setPlusOpen(false);
@@ -1842,11 +1848,7 @@ export function OverlayApp() {
         );
         return;
       }
-      localStorage.setItem(
-        PENDING_CHAT_KEY,
-        JSON.stringify({ text: raw, at: Date.now() }),
-      );
-      window.dispatchEvent(new Event("monibuddy:pendingChat"));
+      writePendingChat({ text: raw, at: Date.now() });
       if (mini.kind === "ladder-open") {
         writeGamePending({ type: "ladder-open", at: Date.now() });
       }
@@ -1885,11 +1887,7 @@ export function OverlayApp() {
       const outbound = effect.targetNickname
         ? `/계란 ${effect.targetNickname}`
         : "/계란";
-      localStorage.setItem(
-        PENDING_CHAT_KEY,
-        JSON.stringify({ text: outbound, at: Date.now() }),
-      );
-      window.dispatchEvent(new Event("monibuddy:pendingChat"));
+      writePendingChat({ text: outbound, at: Date.now() });
       setChat("");
       setPlusOpen(false);
       setMoveOpen(false);
@@ -2004,9 +2002,10 @@ export function OverlayApp() {
   const showSketch = Boolean(sketch && !sketchDismissed);
   sketchVoteAskRef.current = Boolean(
     showSketch &&
-      sketch?.phase === "voting" &&
-      selfMemberId &&
-      !sketch.votes.some((v) => v.memberId === selfMemberId),
+      ((sketch?.phase === "voting" &&
+        selfMemberId &&
+        !sketch.votes.some((v) => v.memberId === selfMemberId)) ||
+        (sketch?.phase === "done" && (sketch.scores?.length ?? 0) > 0)),
   );
   inviteUiRef.current = Boolean(pendingInvite || sketchVoteAskRef.current);
   // 상대가 준비 중일 때는 대기 문구만 보이고, 화면 클릭은 통과시킨다.
@@ -2463,6 +2462,35 @@ export function OverlayApp() {
             if (
               isSelf &&
               showSketch &&
+              sketch?.phase === "done" &&
+              (sketch.scores?.length ?? 0) > 0
+            ) {
+              const ranked = rankSketchScores(sketch.scores);
+              return (
+                <div
+                  className="bubble notice sketch-scores"
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <span className="bubble-text sketch-scores-title">
+                    스케치 점수
+                  </span>
+                  <ol className="sketch-scores-list">
+                    {ranked.map((row, i) => (
+                      <li key={row.memberId}>
+                        <span>
+                          {i + 1}. {row.nickname}
+                        </span>
+                        <span>{row.score}점</span>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              );
+            }
+            if (
+              isSelf &&
+              showSketch &&
               sketch?.phase === "voting" &&
               selfMemberId &&
               !sketch.votes.some((v) => v.memberId === selfMemberId)
@@ -2541,10 +2569,20 @@ export function OverlayApp() {
               sketch?.phase === "voting" &&
               selfMemberId &&
               !sketch.votes.some((v) => v.memberId === selfMemberId);
+            const sketchScoreAsk =
+              isSelf &&
+              showSketch &&
+              sketch?.phase === "done" &&
+              (sketch.scores?.length ?? 0) > 0;
             const hasSpeech =
               Boolean(bubble) ||
               (isSelf &&
-                Boolean(pendingInvite || overlayNotice || sketchVoteAsk));
+                Boolean(
+                  pendingInvite ||
+                    overlayNotice ||
+                    sketchVoteAsk ||
+                    sketchScoreAsk,
+                ));
             return (
               <div className={`status-bubble${hasSpeech ? " with-chat" : ""}`}>
                 {statusText}

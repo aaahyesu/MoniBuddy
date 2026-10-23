@@ -312,9 +312,9 @@ function leaveSocket(socketId: string, opts?: { intentional?: boolean }) {
   scheduleMemberRemoval(code, memberId);
 }
 
-io.on("connection", (socket) => {
-  const games = attachMiniGames(io, rooms, (sid) => socketRoom.get(sid));
+const games = attachMiniGames(io, rooms, (sid) => socketRoom.get(sid));
 
+io.on("connection", (socket) => {
   socket.on(SocketEvents.BombStart, (payload, ack) => {
     games.startBomb(socket, payload ?? { seconds: 30 }, ack);
   });
@@ -560,7 +560,8 @@ io.on("connection", (socket) => {
       parsed.kind === "letter" ? parsed.targetNickname : undefined,
     );
 
-    if (parsed.kind !== "letter" && !attachments.length) {
+    // 스케치 정답: 일반 채팅 텍스트면 첨부 여부와 관계없이 검사
+    if (parsed.kind !== "letter" && text) {
       games.trySketchGuess(socket, text);
     }
 

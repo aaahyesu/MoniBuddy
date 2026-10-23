@@ -16,6 +16,7 @@ import {
   type SketchAck,
   type SketchOpenPayload,
   type SketchStartPayload,
+  type SketchScore,
   type SketchState,
   type SketchStroke,
   type SketchStrokePayload,
@@ -476,6 +477,45 @@ export function attachMiniGames(
     }
   };
 
+  /** 반대만 제외. 투표 안 한 방 멤버도 참가로 넣음(출제자 로테이션·정답 맞춤) */
+  const finalizeSketchPlayers = (room: GameRoom, sketch: SketchState): string[] => {
+    const noIds = new Set(
+      sketch.votes.filter((v) => v.vote === "no").map((v) => v.memberId),
+    );
+    const fromRoom = [...room.members.keys()].filter((id) => !noIds.has(id));
+    if (fromRoom.length > 0) return fromRoom;
+    return sketch.playerIds.filter(Boolean);
+  };
+
+  const initSketchScores = (
+    room: GameRoom,
+    playerIds: string[],
+    prev?: SketchScore[],
+  ): SketchScore[] => {
+    const prevMap = new Map((prev ?? []).map((s) => [s.memberId, s.score]));
+    return playerIds.map((id) => ({
+      memberId: id,
+      nickname: room.members.get(id)?.nickname ?? "참가자",
+      score: prevMap.get(id) ?? 0,
+    }));
+  };
+
+  const bumpSketchScore = (
+    scores: SketchScore[],
+    memberId: string,
+    nickname: string,
+  ): SketchScore[] => {
+    const next = scores.map((s) =>
+      s.memberId === memberId
+        ? { ...s, nickname, score: s.score + 1 }
+        : s,
+    );
+    if (!next.some((s) => s.memberId === memberId)) {
+      next.push({ memberId, nickname, score: 1 });
+    }
+    return next;
+  };
+
   const autoStartSketch = (code: string) => {
     const room = rooms.get(code);
     if (!room?.sketch || room.sketch.phase !== "voting") return;
@@ -483,7 +523,8 @@ export function attachMiniGames(
       clearTimeout(room.sketchVoteTimer);
       room.sketchVoteTimer = undefined;
     }
-    if (room.sketch.playerIds.length < SKETCH_MIN_YES) {
+    const playerIds = finalizeSketchPlayers(room, room.sketch);
+    if (playerIds.length < SKETCH_MIN_YES) {
       room.sketch = undefined;
       io.to(code).emit(SocketEvents.SketchCancel, { at: Date.now() });
       return;
@@ -491,6 +532,8 @@ export function attachMiniGames(
     const categoryId = room.sketch.categoryId ?? "animal";
     const base: SketchState = {
       ...room.sketch,
+      playerIds,
+      scores: initSketchScores(room, playerIds, room.sketch.scores),
       categoryId,
       roundIndex: 1,
       drawnMemberIds: [],
@@ -504,18 +547,24 @@ export function attachMiniGames(
   };
 
   const pickDrawerAndTopic = (
+    room: GameRoom,
     sketch: SketchState,
   ): Pick<
     SketchState,
     "drawerMemberId" | "drawerNickname" | "topic" | "drawnMemberIds"
   > | null => {
-    const players = sketch.playerIds.filter(Boolean);
+    const players = sketch.playerIds.filter((id) => room.members.has(id));
     if (players.length < SKETCH_MIN_YES) return null;
     let pool = players.filter((id) => !sketch.drawnMemberIds.includes(id));
     let drawnMemberIds = [...sketch.drawnMemberIds];
     if (pool.length === 0) {
-      pool = [...players];
+      // 한 바퀴 돌면 직전 출제자는 빼고 다시 섞음(2명 이상일 때 연속 방지)
       drawnMemberIds = [];
+      pool =
+        players.length >= 2 && sketch.drawerMemberId
+          ? players.filter((id) => id !== sketch.drawerMemberId)
+          : [...players];
+      if (pool.length === 0) pool = [...players];
     }
     const drawerMemberId = pool[Math.floor(Math.random() * pool.length)]!;
     drawnMemberIds = [...drawnMemberIds, drawerMemberId];
@@ -523,6 +572,7 @@ export function attachMiniGames(
       sketchCategoryById(sketch.categoryId) ?? SKETCH_CATEGORIES[0]!;
     const topic = cat.topics[Math.floor(Math.random() * cat.topics.length)]!;
     const nick =
+      room.members.get(drawerMemberId)?.nickname ??
       sketch.votes.find((v) => v.memberId === drawerMemberId)?.nickname ??
       "출제자";
     return {
@@ -547,7 +597,9 @@ export function attachMiniGames(
   };
 
   const beginSketchRound = (code: string, sketch: SketchState): SketchState | null => {
-    const picked = pickDrawerAndTopic(sketch);
+    const room = rooms.get(code);
+    if (!room) return null;
+    const picked = pickDrawerAndTopic(room, sketch);
     if (!picked) return null;
     const next: SketchState = {
       ...sketch,
@@ -560,8 +612,6 @@ export function attachMiniGames(
       winnerNickname: null,
       endReason: null,
     };
-    const room = rooms.get(code);
-    if (!room) return null;
     room.sketch = next;
     scheduleSketchTimeout(code);
     emitSketch(code, next);
@@ -600,8 +650,17 @@ export function attachMiniGames(
       clearTimeout(room.sketchRoundTimer);
       room.sketchRoundTimer = undefined;
     }
+    const scores =
+      reason === "guess" && winner
+        ? bumpSketchScore(
+            room.sketch.scores ?? [],
+            winner.memberId,
+            winner.nickname,
+          )
+        : (room.sketch.scores ?? []);
     const revealed: SketchState = {
       ...room.sketch,
+      scores,
       phase: "roundReveal",
       endsAt: null,
       endReason: reason,
@@ -672,6 +731,7 @@ export function attachMiniGames(
       winnerNickname: null,
       endReason: null,
       drawnMemberIds: [],
+      scores: [{ memberId: member.id, nickname: member.nickname, score: 0 }],
     };
     room.sketch = sketch;
     emitSketch(code, sketch);
@@ -747,7 +807,8 @@ export function attachMiniGames(
       { memberId: member.id, nickname: member.nickname, vote: "yes" },
     ];
     const playerIds = [...room.sketch.playerIds, member.id];
-    const sketch: SketchState = { ...room.sketch, votes, playerIds };
+    const scores = initSketchScores(room, playerIds, room.sketch.scores);
+    const sketch: SketchState = { ...room.sketch, votes, playerIds, scores };
     room.sketch = sketch;
     emitSketch(code, sketch);
     ack?.({ ok: true, sketch });
@@ -773,8 +834,9 @@ export function attachMiniGames(
       ack?.({ ok: false, error: "주최자만 시작할 수 있어요" });
       return;
     }
-    if (room.sketch.playerIds.length < SKETCH_MIN_YES) {
-      ack?.({ ok: false, error: `찬성은 ${SKETCH_MIN_YES}명 이상 필요해요` });
+    const playerIds = finalizeSketchPlayers(room, room.sketch);
+    if (playerIds.length < SKETCH_MIN_YES) {
+      ack?.({ ok: false, error: `참가자가 ${SKETCH_MIN_YES}명 이상 필요해요` });
       return;
     }
     const categoryId =
@@ -785,6 +847,8 @@ export function attachMiniGames(
     }
     const base: SketchState = {
       ...room.sketch,
+      playerIds,
+      scores: initSketchScores(room, playerIds, room.sketch.scores),
       categoryId,
       roundIndex: 1,
       drawnMemberIds: [],
@@ -940,11 +1004,12 @@ export function attachMiniGames(
         winnerNickname: null,
         endReason: null,
         drawnMemberIds: [],
+        scores: [],
       },
     });
   };
 
-  /** 채팅 전송 후 호출. 정답이면 라운드 종료 */
+  /** 채팅 전송 후 호출. 정답이면 라운드 종료 (출제자 제외, 방 멤버면 가능) */
   const trySketchGuess = (socket: Socket, text: string): boolean => {
     const code = getRoomCode(socket.id);
     if (!code) return false;
@@ -956,9 +1021,17 @@ export function attachMiniGames(
     const member = memberId ? room.members.get(memberId) : undefined;
     if (!member) return false;
     if (member.id === room.sketch.drawerMemberId) return false;
-    if (!room.sketch.playerIds.includes(member.id)) return false;
-    if (normalizeSketchGuess(text) !== normalizeSketchGuess(room.sketch.topic)) {
-      return false;
+    const guess = normalizeSketchGuess(text);
+    const answer = normalizeSketchGuess(room.sketch.topic);
+    if (!guess || guess !== answer) return false;
+    // 맞힌 사람은 다음 라운드 출제 풀·점수판에도 넣음
+    if (!room.sketch.playerIds.includes(member.id)) {
+      const playerIds = [...room.sketch.playerIds, member.id];
+      room.sketch = {
+        ...room.sketch,
+        playerIds,
+        scores: initSketchScores(room, playerIds, room.sketch.scores),
+      };
     }
     finishSketchRound(code, "guess", {
       memberId: member.id,
