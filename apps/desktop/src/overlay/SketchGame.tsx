@@ -9,6 +9,7 @@ import {
 import {
   SKETCH_CATEGORIES,
   SKETCH_MIN_YES,
+  rankSketchScores,
   type SketchCategoryId,
   type SketchState,
   type SketchStroke,
@@ -255,6 +256,7 @@ export function SketchGame({
   }
 
   if (sketch.phase === "done") {
+    const ranked = rankSketchScores(sketch.scores);
     return (
       <div className="sketch-root done" ref={uiRef} style={rootStyle}>
         <div
@@ -268,6 +270,17 @@ export function SketchGame({
           </div>
           <h3>스케치 종료</h3>
           <p className="sketch-hint">{sketch.totalRounds}판 끝났어요</p>
+          {ranked.length > 0 ? (
+            <ol className="sketch-scoreboard">
+              {ranked.map((row, i) => (
+                <li key={row.memberId}>
+                  <span className="sketch-score-rank">{i + 1}</span>
+                  <span className="sketch-score-name">{row.nickname}</span>
+                  <span className="sketch-score-pts">{row.score}점</span>
+                </li>
+              ))}
+            </ol>
+          ) : null}
           <button
             type="button"
             className="primary"
@@ -320,7 +333,7 @@ export function SketchGame({
           </p>
           <p className="sketch-hint">
             {sketch.endReason === "guess" && sketch.winnerNickname
-              ? `${sketch.winnerNickname} 님이 맞혔어요`
+              ? `${sketch.winnerNickname} 님이 맞혔어요 (+1)`
               : sketch.endReason === "timeout"
                 ? "시간 종료"
                 : "출제자가 공개했어요"}

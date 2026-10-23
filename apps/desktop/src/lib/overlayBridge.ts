@@ -23,6 +23,18 @@ function dispatch(name: string) {
   window.dispatchEvent(new Event(name));
 }
 
+/** 프로필 닉 — 같은 브라우저 다중 탭에서 pending 섞임 방지용 */
+function profileNickname(): string {
+  try {
+    const raw = localStorage.getItem("monibuddy.profile.v1");
+    if (!raw) return "";
+    const p = JSON.parse(raw) as { nickname?: string };
+    return String(p?.nickname ?? "").trim();
+  } catch {
+    return "";
+  }
+}
+
 export function readPendingInvite(): FriendInviteRecvPayload | null {
   try {
     const raw = localStorage.getItem(PENDING_INVITE_KEY);
@@ -101,6 +113,8 @@ export const GAME_PENDING_KEY = "monibuddy.gamePending.v1";
 export const GAME_PENDING_EVENT = "monibuddy:gamePending";
 export const GAME_STATE_KEY = "monibuddy.gameState.v1";
 export const GAME_STATE_EVENT = "monibuddy:gameState";
+export const PENDING_CHAT_KEY = "monibuddy.pendingChat.v1";
+export const PENDING_CHAT_EVENT = "monibuddy:pendingChat";
 
 export type GamePendingAction =
   | {
@@ -108,6 +122,7 @@ export type GamePendingAction =
       random?: boolean;
       targetNickname?: string;
       at: number;
+      byNickname?: string;
     }
   | {
       type: "ladder-start";
@@ -115,33 +130,52 @@ export type GamePendingAction =
       outcomes?: string[];
       mode?: "winlose" | "custom";
       at: number;
+      byNickname?: string;
     }
-  | { type: "ladder-cancel"; at: number }
-  | { type: "ladder-open"; at: number }
-  | { type: "roulette-open"; at: number }
-  | { type: "roulette-spin"; slots: string[]; at: number }
-  | { type: "roulette-cancel"; at: number }
-  | { type: "sketch-open"; rounds: number; at: number }
-  | { type: "sketch-vote"; vote: "yes" | "no"; at: number }
-  | { type: "sketch-join"; at: number }
+  | { type: "ladder-cancel"; at: number; byNickname?: string }
+  | { type: "ladder-open"; at: number; byNickname?: string }
+  | { type: "roulette-open"; at: number; byNickname?: string }
+  | {
+      type: "roulette-spin";
+      slots: string[];
+      at: number;
+      byNickname?: string;
+    }
+  | { type: "roulette-cancel"; at: number; byNickname?: string }
+  | {
+      type: "sketch-open";
+      rounds: number;
+      at: number;
+      byNickname?: string;
+    }
+  | {
+      type: "sketch-vote";
+      vote: "yes" | "no";
+      at: number;
+      byNickname?: string;
+    }
+  | { type: "sketch-join"; at: number; byNickname?: string }
   | {
       type: "sketch-category";
       categoryId: import("@monibuddy/shared").SketchCategoryId;
       at: number;
+      byNickname?: string;
     }
   | {
       type: "sketch-start";
       categoryId: import("@monibuddy/shared").SketchCategoryId;
       at: number;
+      byNickname?: string;
     }
   | {
       type: "sketch-stroke";
       stroke: import("@monibuddy/shared").SketchStroke;
       at: number;
+      byNickname?: string;
     }
-  | { type: "sketch-clear"; at: number }
-  | { type: "sketch-reveal"; at: number }
-  | { type: "sketch-cancel"; at: number };
+  | { type: "sketch-clear"; at: number; byNickname?: string }
+  | { type: "sketch-reveal"; at: number; byNickname?: string }
+  | { type: "sketch-cancel"; at: number; byNickname?: string };
 
 export type GameBridgeState = {
   bomb: import("@monibuddy/shared").BombState | null;
@@ -152,23 +186,122 @@ export type GameBridgeState = {
   at: number;
 };
 
+export type PendingChat = {
+  text?: string;
+  attachments?: import("@monibuddy/shared").ChatAttachment[];
+  at: number;
+  /** 이 닉의 설정 창만 flush (다른 탭이 가로채지 않게) */
+  byNickname?: string;
+};
+
+function readGameQueue(): GamePendingAction[] {
+  try {
+    const raw = localStorage.getItem(GAME_PENDING_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as GamePendingAction | GamePendingAction[];
+    if (Array.isArray(parsed)) return parsed;
+    if (parsed && typeof parsed === "object" && "type" in parsed) {
+      return [parsed];
+    }
+    return [];
+  } catch {
+    return [];
+  }
+}
+
+function writeGameQueue(list: GamePendingAction[]) {
+  if (list.length === 0) {
+    localStorage.removeItem(GAME_PENDING_KEY);
+  } else {
+    localStorage.setItem(GAME_PENDING_KEY, JSON.stringify(list));
+  }
+}
+
 export function writeGamePending(action: GamePendingAction) {
-  localStorage.setItem(GAME_PENDING_KEY, JSON.stringify(action));
+  const entry: GamePendingAction = {
+    ...action,
+    byNickname: action.byNickname ?? profileNickname(),
+  };
+  const list = readGameQueue();
+  list.push(entry);
+  writeGameQueue(list.slice(-80));
   dispatch(GAME_PENDING_EVENT);
 }
 
+/** 내 닉에 해당하는 대기 액션 하나 꺼냄. 없으면 null (다른 탭 것은 건드리지 않음) */
+export function takeGamePending(forNickname: string): GamePendingAction | null {
+  const list = readGameQueue();
+  if (list.length === 0) return null;
+  const nick = forNickname.trim().toLowerCase();
+  const idx = list.findIndex((a) => {
+    const by = String(a.byNickname ?? "")
+      .trim()
+      .toLowerCase();
+    if (!by) return true;
+    if (!nick) return true;
+    return by === nick;
+  });
+  if (idx < 0) return null;
+  const item = list[idx]!;
+  list.splice(idx, 1);
+  writeGameQueue(list);
+  return item;
+}
+
+/** @deprecated takeGamePending 사용 */
 export function readGamePending(): GamePendingAction | null {
-  try {
-    const raw = localStorage.getItem(GAME_PENDING_KEY);
-    if (!raw) return null;
-    return JSON.parse(raw) as GamePendingAction;
-  } catch {
-    return null;
-  }
+  const list = readGameQueue();
+  return list[0] ?? null;
 }
 
 export function clearGamePending() {
   localStorage.removeItem(GAME_PENDING_KEY);
+}
+
+export function writePendingChat(payload: PendingChat) {
+  const entry: PendingChat = {
+    ...payload,
+    byNickname: payload.byNickname ?? profileNickname(),
+  };
+  try {
+    const raw = localStorage.getItem(PENDING_CHAT_KEY);
+    let list: PendingChat[] = [];
+    if (raw) {
+      const parsed = JSON.parse(raw) as PendingChat | PendingChat[];
+      list = Array.isArray(parsed) ? parsed : [parsed];
+    }
+    list.push(entry);
+    localStorage.setItem(PENDING_CHAT_KEY, JSON.stringify(list.slice(-40)));
+  } catch {
+    localStorage.setItem(PENDING_CHAT_KEY, JSON.stringify([entry]));
+  }
+  dispatch(PENDING_CHAT_EVENT);
+}
+
+export function takePendingChat(forNickname: string): PendingChat | null {
+  try {
+    const raw = localStorage.getItem(PENDING_CHAT_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as PendingChat | PendingChat[];
+    const list = Array.isArray(parsed) ? parsed : [parsed];
+    const nick = forNickname.trim().toLowerCase();
+    const idx = list.findIndex((c) => {
+      const by = String(c.byNickname ?? "")
+        .trim()
+        .toLowerCase();
+      if (!by) return true;
+      if (!nick) return true;
+      return by === nick;
+    });
+    if (idx < 0) return null;
+    const item = list[idx]!;
+    list.splice(idx, 1);
+    if (list.length === 0) localStorage.removeItem(PENDING_CHAT_KEY);
+    else localStorage.setItem(PENDING_CHAT_KEY, JSON.stringify(list));
+    return item;
+  } catch {
+    return null;
+  }
 }
 
 export function writeGameState(state: GameBridgeState) {

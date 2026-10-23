@@ -962,6 +962,12 @@ export type SketchStroke = {
   points: SketchStrokePoint[];
 };
 
+export type SketchScore = {
+  memberId: string;
+  nickname: string;
+  score: number;
+};
+
 export type SketchState = {
   hostMemberId: string;
   hostNickname: string;
@@ -985,7 +991,17 @@ export type SketchState = {
   endReason: "guess" | "reveal" | "timeout" | null;
   /** 이번 사이클에서 이미 출제한 사람 (랜덤 로테이션) */
   drawnMemberIds: string[];
+  /** 정답 +1 누적. 종료 시 점수순 표시 */
+  scores: SketchScore[];
 };
+
+/** 높은 점수 순. 동점이면 닉 가나다 */
+export function rankSketchScores(scores: SketchScore[] | null | undefined): SketchScore[] {
+  return [...(scores ?? [])].sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    return a.nickname.localeCompare(b.nickname, "ko");
+  });
+}
 
 export type SketchOpenPayload = { rounds?: number };
 export type SketchVotePayload = { vote: SketchVote };
@@ -1001,7 +1017,9 @@ export function normalizeSketchGuess(raw: string): string {
     .normalize("NFC")
     .trim()
     .toLowerCase()
-    .replace(/\s+/g, "");
+    // 제로폭·구두점 제거 후 공백 제거 (고양이! / 고 양 이 도 매칭)
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .replace(/[^\p{L}\p{N}]/gu, "");
 }
 
 export function sketchCategoryById(

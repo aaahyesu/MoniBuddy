@@ -28,12 +28,13 @@ import {
 import { applyOverlayHotkey } from "./lib/overlayHotkey";
 import {
   clearInviteAction,
-  clearGamePending,
   GAME_PENDING_EVENT,
   INVITE_ACTION_EVENT,
+  PENDING_CHAT_EVENT,
   readInviteAction,
-  readGamePending,
   readPendingInvite,
+  takeGamePending,
+  takePendingChat,
 } from "./lib/overlayBridge";
 import { persistActiveRoom } from "./overlay/OverlayApp";
 import { invokeSafe, isTauri } from "./lib/tauri";
@@ -278,86 +279,89 @@ export function App() {
     };
   }, [room.pendingInvite, room.joinRoom, room.setPendingInvite, progress]);
 
-  // Overlay → bomb/ladder actions
+  // Overlay → bomb/ladder/sketch actions (닉별 큐 — 다른 탭이 가로채지 않음)
   useEffect(() => {
+    const applyAction = (action: ReturnType<typeof takeGamePending>) => {
+      if (!action) return;
+      if (Date.now() - action.at > 12000) return;
+      if (action.type === "bomb-pass") {
+        room.passBomb({
+          random: action.random,
+          targetNickname: action.targetNickname,
+        });
+        return;
+      }
+      if (action.type === "ladder-open") {
+        room.openLadder();
+        return;
+      }
+      if (action.type === "ladder-start") {
+        room.startLadder({
+          memberIds: action.memberIds,
+          outcomes: action.outcomes,
+          mode: action.mode,
+        });
+        return;
+      }
+      if (action.type === "ladder-cancel") {
+        room.cancelLadder();
+        return;
+      }
+      if (action.type === "roulette-open") {
+        room.openRoulette();
+        return;
+      }
+      if (action.type === "roulette-spin") {
+        room.spinRoulette(action.slots);
+        return;
+      }
+      if (action.type === "roulette-cancel") {
+        room.cancelRoulette();
+        return;
+      }
+      if (action.type === "sketch-open") {
+        room.openSketch(action.rounds);
+        return;
+      }
+      if (action.type === "sketch-vote") {
+        room.voteSketch(action.vote);
+        return;
+      }
+      if (action.type === "sketch-join") {
+        room.joinSketch();
+        return;
+      }
+      if (action.type === "sketch-category") {
+        room.setSketchCategory(action.categoryId);
+        return;
+      }
+      if (action.type === "sketch-start") {
+        room.startSketch(action.categoryId);
+        return;
+      }
+      if (action.type === "sketch-stroke") {
+        room.strokeSketch(action.stroke);
+        return;
+      }
+      if (action.type === "sketch-clear") {
+        room.clearSketchBoard();
+        return;
+      }
+      if (action.type === "sketch-reveal") {
+        room.revealSketch();
+        return;
+      }
+      if (action.type === "sketch-cancel") {
+        room.cancelSketch();
+      }
+    };
     const flush = () => {
       try {
-        const action = readGamePending();
-        if (!action) return;
-        if (Date.now() - action.at > 12000) {
-          clearGamePending();
-          return;
-        }
-        clearGamePending();
-        if (action.type === "bomb-pass") {
-          room.passBomb({
-            random: action.random,
-            targetNickname: action.targetNickname,
-          });
-          return;
-        }
-        if (action.type === "ladder-open") {
-          room.openLadder();
-          return;
-        }
-        if (action.type === "ladder-start") {
-          room.startLadder({
-            memberIds: action.memberIds,
-            outcomes: action.outcomes,
-            mode: action.mode,
-          });
-          return;
-        }
-        if (action.type === "ladder-cancel") {
-          room.cancelLadder();
-          return;
-        }
-        if (action.type === "roulette-open") {
-          room.openRoulette();
-          return;
-        }
-        if (action.type === "roulette-spin") {
-          room.spinRoulette(action.slots);
-          return;
-        }
-        if (action.type === "roulette-cancel") {
-          room.cancelRoulette();
-          return;
-        }
-        if (action.type === "sketch-open") {
-          room.openSketch(action.rounds);
-          return;
-        }
-        if (action.type === "sketch-vote") {
-          room.voteSketch(action.vote);
-          return;
-        }
-        if (action.type === "sketch-join") {
-          room.joinSketch();
-          return;
-        }
-        if (action.type === "sketch-category") {
-          room.setSketchCategory(action.categoryId);
-          return;
-        }
-        if (action.type === "sketch-start") {
-          room.startSketch(action.categoryId);
-          return;
-        }
-        if (action.type === "sketch-stroke") {
-          room.strokeSketch(action.stroke);
-          return;
-        }
-        if (action.type === "sketch-clear") {
-          room.clearSketchBoard();
-          return;
-        }
-        if (action.type === "sketch-reveal") {
-          room.revealSketch();
-          return;
-        }
-        if (action.type === "sketch-cancel") {
-          room.cancelSketch();
+        // 한 틱에 여러 개(선·투표) 처리 — 덮어쓰기 유실 방지
+        for (let i = 0; i < 12; i++) {
+          const action = takeGamePending(profile.nickname || "");
+          if (!action) break;
+          applyAction(action);
         }
       } catch {
         /* ignore */
@@ -365,13 +369,14 @@ export function App() {
     };
     window.addEventListener(GAME_PENDING_EVENT, flush);
     window.addEventListener("storage", flush);
-    const id = window.setInterval(flush, 400);
+    const id = window.setInterval(flush, 200);
     return () => {
       window.removeEventListener(GAME_PENDING_EVENT, flush);
       window.removeEventListener("storage", flush);
       window.clearInterval(id);
     };
   }, [
+    profile.nickname,
     room.passBomb,
     room.openLadder,
     room.startLadder,
@@ -514,18 +519,12 @@ export function App() {
     if (activeBuddyId) progress.addGrowthXp(activeBuddyId, 1);
   };
 
-  // Overlay bottom chat → settings socket
+  // Overlay bottom chat → settings socket (닉별 큐)
   useEffect(() => {
     const flush = () => {
       try {
-        const raw = localStorage.getItem("monibuddy.pendingChat.v1");
-        if (!raw) return;
-        const parsed = JSON.parse(raw) as {
-          text?: string;
-          at?: number;
-          attachments?: import("@monibuddy/shared").ChatAttachment[];
-        };
-        localStorage.removeItem("monibuddy.pendingChat.v1");
+        const parsed = takePendingChat(profile.nickname || "");
+        if (!parsed) return;
         const text = parsed.text?.trim() ?? "";
         const attachments = parsed.attachments;
         if ((!text && !attachments?.length) || !room.roomCode) return;
@@ -535,15 +534,15 @@ export function App() {
         /* ignore */
       }
     };
-    window.addEventListener("monibuddy:pendingChat", flush);
+    window.addEventListener(PENDING_CHAT_EVENT, flush);
     window.addEventListener("storage", flush);
-    const id = window.setInterval(flush, 400);
+    const id = window.setInterval(flush, 200);
     return () => {
-      window.removeEventListener("monibuddy:pendingChat", flush);
+      window.removeEventListener(PENDING_CHAT_EVENT, flush);
       window.removeEventListener("storage", flush);
       window.clearInterval(id);
     };
-  }, [room.roomCode, room.sendChat, activeBuddyId, progress]);
+  }, [profile.nickname, room.roomCode, room.sendChat, activeBuddyId, progress]);
   // 가이드(settings) 진행 중이면 로비에 앵커가 있도록 전환
   // (프로필 등 긴 화면으로 가면 스포트라이트만 남아 빈 화면처럼 보임)
   useEffect(() => {
