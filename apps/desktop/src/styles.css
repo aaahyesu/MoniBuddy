@@ -196,15 +196,71 @@
   gap: 0.25rem;
   margin-top: 0.2rem;
 }
+.chat-attach-img-btn {
+  appearance: none;
+  display: block;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: zoom-in;
+  pointer-events: auto;
+  border-radius: 6px;
+  overflow: hidden;
+}
 .chat-attach-img {
-  max-width: 140px;
-  max-height: 100px;
+  max-width: 160px;
+  max-height: 120px;
   object-fit: contain;
   border-radius: 6px;
+  display: block;
+  vertical-align: middle;
 }
 .chat-log-line .chat-attach-img {
-  max-width: 120px;
-  max-height: 80px;
+  max-width: 140px;
+  max-height: 100px;
+}
+.chat-img-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.82);
+  pointer-events: auto;
+  cursor: zoom-out;
+}
+.chat-img-lightbox-img {
+  max-width: min(920px, 92vw);
+  max-height: 88vh;
+  object-fit: contain;
+  border-radius: 8px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  cursor: default;
+  background: #111;
+}
+.chat-img-lightbox-close {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 201;
+  appearance: none;
+  width: 36px;
+  height: 36px;
+  border: 2px solid #fff;
+  border-radius: 0;
+  background: #000;
+  color: #fff;
+  font: inherit;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.chat-img-lightbox-close:hover {
+  background: #222;
 }
 .chat-attach-link {
   color: #2b6cb0;

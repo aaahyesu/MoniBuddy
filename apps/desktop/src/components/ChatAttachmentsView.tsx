@@ -1,4 +1,5 @@
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import type { ChatAttachment } from "@monibuddy/shared";
 import { isTauri } from "../lib/tauri";
 
@@ -51,56 +52,139 @@ export function ChatTextWithLinks({ text }: { text: string }) {
   return <>{parts}</>;
 }
 
+function ImageLightbox({
+  src,
+  alt,
+  onClose,
+}: {
+  src: string;
+  alt: string;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      className="chat-img-lightbox"
+      role="dialog"
+      aria-modal="true"
+      aria-label="이미지 확대"
+      onPointerDown={(e) => {
+        e.stopPropagation();
+        if (e.target === e.currentTarget) onClose();
+      }}
+      onClick={(e) => {
+        e.stopPropagation();
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <button
+        type="button"
+        className="chat-img-lightbox-close"
+        aria-label="닫기"
+        onClick={(e) => {
+          e.stopPropagation();
+          onClose();
+        }}
+      >
+        ✕
+      </button>
+      <img
+        className="chat-img-lightbox-img"
+        src={src}
+        alt={alt}
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
+      />
+    </div>
+  );
+}
+
 export function ChatAttachmentsView({
   items,
 }: {
   items?: ChatAttachment[];
 }) {
+  const [preview, setPreview] = useState<{
+    src: string;
+    alt: string;
+  } | null>(null);
+
   if (!items?.length) return null;
   return (
-    <span className="chat-attach">
-      {items.map((item, index) => {
-        if (item.kind === "image") {
-          return (
-            <img
-              key={`${item.kind}-${index}`}
-              className="chat-attach-img"
-              src={item.dataUrl}
-              alt={item.name || "이미지"}
-            />
-          );
-        }
-        if (item.kind === "link") {
+    <>
+      <span className="chat-attach">
+        {items.map((item, index) => {
+          if (item.kind === "image") {
+            const alt = item.name || "이미지";
+            return (
+              <button
+                key={`${item.kind}-${index}`}
+                type="button"
+                className="chat-attach-img-btn"
+                title="클릭해서 크게 보기"
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setPreview({ src: item.dataUrl, alt });
+                }}
+              >
+                <img
+                  className="chat-attach-img"
+                  src={item.dataUrl}
+                  alt={alt}
+                />
+              </button>
+            );
+          }
+          if (item.kind === "link") {
+            return (
+              <a
+                key={`${item.kind}-${index}`}
+                className="chat-attach-link"
+                href={item.url}
+                target="_blank"
+                rel="noreferrer"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  void openExternalUrl(item.url);
+                }}
+                onPointerDown={(e) => e.stopPropagation()}
+              >
+                {item.url}
+              </a>
+            );
+          }
           return (
             <a
               key={`${item.kind}-${index}`}
               className="chat-attach-link"
-              href={item.url}
-              target="_blank"
-              rel="noreferrer"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                void openExternalUrl(item.url);
-              }}
+              href={item.dataUrl}
+              download={item.name}
               onPointerDown={(e) => e.stopPropagation()}
             >
-              {item.url}
+              {item.name}
             </a>
           );
-        }
-        return (
-          <a
-            key={`${item.kind}-${index}`}
-            className="chat-attach-link"
-            href={item.dataUrl}
-            download={item.name}
-            onPointerDown={(e) => e.stopPropagation()}
-          >
-            {item.name}
-          </a>
-        );
-      })}
-    </span>
+        })}
+      </span>
+      {preview && typeof document !== "undefined"
+        ? createPortal(
+            <ImageLightbox
+              src={preview.src}
+              alt={preview.alt}
+              onClose={() => setPreview(null)}
+            />,
+            document.body,
+          )
+        : null}
+    </>
   );
 }
