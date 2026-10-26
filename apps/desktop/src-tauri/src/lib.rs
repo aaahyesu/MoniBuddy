@@ -163,6 +163,44 @@ fn pick_chat_file(app: AppHandle, kind: String) -> Result<Option<PickedChatFile>
     }))
 }
 
+/// 오버레이에서 http(s) 링크를 기본 브라우저로 연다
+#[tauri::command]
+fn open_external_url(url: String) -> Result<(), String> {
+    let u = url.trim();
+    if !(u.starts_with("https://") || u.starts_with("http://")) {
+        return Err("http 또는 https 주소만 열 수 있어요".into());
+    }
+    if u.chars().any(|c| c.is_control() || c == '"' || c == '\'') {
+        return Err("잘못된 주소예요".into());
+    }
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("cmd")
+            .args(["/C", "start", "", u])
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(u)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(u)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+    #[allow(unreachable_code)]
+    Err("이 OS에서는 링크를 열 수 없어요".into())
+}
+
 fn mime_for_picked(name: &str, kind: &str) -> String {
     let ext = name.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
     match ext.as_str() {
@@ -1063,7 +1101,8 @@ pub fn run() {
             get_click_debug,
             open_devtools,
             force_overlay_interactive,
-            pick_chat_file
+            pick_chat_file,
+            open_external_url
         ])
         .setup(|app| {
             #[cfg(desktop)]

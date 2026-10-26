@@ -28,7 +28,10 @@ import {
   type SketchState,
 } from "@monibuddy/shared";
 import { GuideSpotlight } from "../components/GuideSpotlight";
-import { ChatAttachmentsView } from "../components/ChatAttachmentsView";
+import {
+  ChatAttachmentsView,
+  ChatTextWithLinks,
+} from "../components/ChatAttachmentsView";
 import {
   fileFromBase64,
   fileToAttachment,
@@ -1353,6 +1356,21 @@ export function OverlayApp() {
                 cy >= a.y - 140
               );
             });
+          // 말풍선·채팅로그의 링크/첨부 위 — 상대 것도 클릭 가능해야 함
+          let overAttach = false;
+          try {
+            overAttach = document
+              .elementsFromPoint(cx, cy)
+              .some((el) =>
+                Boolean(
+                  (el as HTMLElement).closest?.(
+                    ".chat-attach-link, .chat-attach",
+                  ),
+                ),
+              );
+          } catch {
+            overAttach = false;
+          }
           const effectHit = effectHitRef.current;
           const overLetterIcon =
             effectHit === "icon" &&
@@ -1377,6 +1395,7 @@ export function OverlayApp() {
             ? false
             : guideActiveRef.current ||
               overInvite ||
+              overAttach ||
               overLetterIcon ||
               overEffectFull ||
               overSketchUi ||
@@ -1763,6 +1782,63 @@ export function OverlayApp() {
       .catch((err: unknown) => {
         setAttachHint(err instanceof Error ? err.message : "첨부를 보내지 못했어요");
       });
+  };
+
+  const handleChatPaste = async (
+    e: React.ClipboardEvent<HTMLInputElement>,
+  ) => {
+    if (composeMode === "status") return;
+    const dt = e.clipboardData;
+    if (!dt) return;
+
+    const imageItem = Array.from(dt.items).find(
+      (it) => it.kind === "file" && it.type.startsWith("image/"),
+    );
+    if (imageItem) {
+      const file = imageItem.getAsFile();
+      if (!file) return;
+      e.preventDefault();
+      try {
+        const item = await imageFileToAttachment(file);
+        const roomNicks = members
+          .map((m) => m.nickname?.trim())
+          .filter((n): n is string => Boolean(n));
+        const effect = parseEffectChat(chat, roomNicks);
+        const asLetter = effect.kind === "letter";
+        publishOutgoing(
+          asLetter ? effect.text : chat.trim(),
+          [item],
+          asLetter,
+          asLetter ? effect.targetNickname : undefined,
+        );
+        setAttachHint("");
+      } catch (err) {
+        setAttachHint(
+          err instanceof Error ? err.message : "이미지를 붙이지 못했어요",
+        );
+      }
+      return;
+    }
+
+    const plain = (dt.getData("text/plain") ?? "").trim();
+    // 입력칸이 비어 있고 URL만 붙이면 링크로 바로 전송
+    if (
+      plain &&
+      !chat.trim() &&
+      /^https?:\/\/\S+$/i.test(plain) &&
+      !isLetterChatDraft(chat) &&
+      !isEggChat(chat)
+    ) {
+      e.preventDefault();
+      try {
+        publishOutgoing("", [linkToAttachment(plain)], false);
+        setAttachHint("");
+      } catch (err) {
+        setAttachHint(
+          err instanceof Error ? err.message : "링크를 붙이지 못했어요",
+        );
+      }
+    }
   };
 
   const sendChat = () => {
@@ -2248,7 +2324,11 @@ export function OverlayApp() {
                   <strong style={{ color: chatNickColor(m.memberId, m.nickname) }}>
                     {m.nickname}
                   </strong>
-                  {m.text ? <span>{m.text}</span> : null}
+                  {m.text ? (
+                    <span>
+                      <ChatTextWithLinks text={m.text} />
+                    </span>
+                  ) : null}
                   <ChatAttachmentsView items={m.attachments} />
                 </div>
               ))
@@ -2551,7 +2631,11 @@ export function OverlayApp() {
             if (bubble && (bubble.text || bubble.attachments?.length)) {
               return (
                 <div className="bubble">
-                  {bubble.text ? <span className="bubble-text">{bubble.text}</span> : null}
+                  {bubble.text ? (
+                    <span className="bubble-text">
+                      <ChatTextWithLinks text={bubble.text} />
+                    </span>
+                  ) : null}
                   <ChatAttachmentsView items={bubble.attachments} />
                 </div>
               );
@@ -2977,6 +3061,9 @@ export function OverlayApp() {
                                 : "혼잣말 · /편지 · /계란…"
               }
               onChange={(e) => setChat(e.target.value)}
+              onPaste={(e) => {
+                void handleChatPaste(e);
+              }}
               onKeyDown={(e) => {
                 if (e.key === "Escape") {
                   if (composeMode === "status") {
