@@ -1364,7 +1364,7 @@ export function OverlayApp() {
               .some((el) =>
                 Boolean(
                   (el as HTMLElement).closest?.(
-                    ".chat-attach-link, .chat-attach",
+                    ".chat-attach-link, .chat-attach, .chat-attach-img-btn, .chat-img-lightbox",
                   ),
                 ),
               );
