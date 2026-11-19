@@ -36,6 +36,7 @@ import {
   generateLadderRungs,
   nicknamesEqual,
   normalizeSketchGuess,
+  pickSketchTopic,
   resolveLadderPaths,
   shuffleInPlace,
   sketchCategoryById,
@@ -573,18 +574,13 @@ export function attachMiniGames(
     }
     const drawerMemberId = pool[Math.floor(Math.random() * pool.length)]!;
     drawnMemberIds = [...drawnMemberIds, drawerMemberId];
-    const cat =
-      sketchCategoryById(sketch.categoryId) ?? SKETCH_CATEGORIES[0]!;
-    const used = sketch.usedTopics ?? [];
-    let topicPool = cat.topics.filter((t) => !used.includes(t));
-    // 카테고리 주제를 다 쓰면 그때만 초기화 (보통 판수 ≤ 주제 수)
-    let usedTopics = [...used];
-    if (topicPool.length === 0) {
-      topicPool = [...cat.topics];
-      usedTopics = [];
-    }
-    const topic = topicPool[Math.floor(Math.random() * topicPool.length)]!;
-    usedTopics = [...usedTopics, topic];
+    const categoryId =
+      sketchCategoryById(sketch.categoryId)?.id ??
+      SKETCH_CATEGORIES[0]!.id;
+    const { topic, usedTopics } = pickSketchTopic(
+      categoryId,
+      sketch.usedTopics ?? [],
+    );
     const nick =
       room.members.get(drawerMemberId)?.nickname ??
       sketch.votes.find((v) => v.memberId === drawerMemberId)?.nickname ??
